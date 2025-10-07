@@ -202,6 +202,16 @@ class ShortcutLauncher {
             console.log('✅ RustDesk button event listener added');
         }
 
+        // Screen Share button
+        const screenshareBtn = document.getElementById('screenshare-btn');
+        if (screenshareBtn) {
+            screenshareBtn.addEventListener('click', () => {
+                console.log('Screen Share button clicked');
+                this.showScreenShareModal();
+            });
+            console.log('✅ Screen Share button event listener added');
+        }
+
         // TOP BAR Add shortcut button - ONLY ADD BUTTON NOW
         const addBtn = document.getElementById('add-shortcut-btn');
         if (addBtn) {
@@ -411,6 +421,11 @@ class ShortcutLauncher {
             adminModalClose.addEventListener('click', () => this.hideAdminModal());
         }
 
+        const screenshareModalClose = document.getElementById('screenshare-modal-close');
+        if (screenshareModalClose) {
+            screenshareModalClose.addEventListener('click', () => this.hideScreenShareModal());
+        }
+
         // Modal background clicks
         const addModal = document.getElementById('add-modal');
         if (addModal) {
@@ -426,6 +441,15 @@ class ShortcutLauncher {
             adminModal.addEventListener('click', (e) => {
                 if (e.target.id === 'admin-modal') {
                     this.hideAdminModal();
+                }
+            });
+        }
+
+        const screenshareModal = document.getElementById('screenshare-modal');
+        if (screenshareModal) {
+            screenshareModal.addEventListener('click', (e) => {
+                if (e.target.id === 'screenshare-modal') {
+                    this.hideScreenShareModal();
                 }
             });
         }
@@ -803,9 +827,24 @@ class ShortcutLauncher {
         }
     }
 
+    showScreenShareModal() {
+        const modal = document.getElementById('screenshare-modal');
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    }
+
+    hideScreenShareModal() {
+        const modal = document.getElementById('screenshare-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
     hideAllModals() {
         this.hideAddModal();
         this.hideAdminModal();
+        this.hideScreenShareModal();
     }
 
     updatePathField(type) {
@@ -1410,8 +1449,10 @@ class ShortcutLauncher {
     isModalOpen() {
         const addModal = document.getElementById('add-modal');
         const adminModal = document.getElementById('admin-modal');
+        const screenshareModal = document.getElementById('screenshare-modal');
         return (addModal && addModal.style.display === 'block') || 
-               (adminModal && adminModal.style.display === 'block');
+               (adminModal && adminModal.style.display === 'block') ||
+               (screenshareModal && screenshareModal.style.display === 'block');
     }
 
     initializeKeyboardFocus() {
