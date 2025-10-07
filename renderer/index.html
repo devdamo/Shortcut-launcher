@@ -228,10 +228,11 @@
 
     <!-- Video Player (Full Screen) -->
     <div id="video-player" class="video-player" style="display: none;">
-        <video id="remote-video" autoplay playsinline></video>
+        <video id="remote-video" autoplay playsinline muted></video>
         <div id="video-controls" class="video-controls">
             <div class="video-info">
                 <span id="viewing-username">Unknown User</span>
+                <span id="video-status" style="margin-left: 20px; font-size: 12px; color: #ccc;"></span>
             </div>
             <div class="video-actions">
                 <button id="close-video-btn" class="close-video-btn">Close</button>

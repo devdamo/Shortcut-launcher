@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, net, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, net, screen, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 const os = require('os');
@@ -982,6 +982,45 @@ ipcMain.handle('set-desktop-mode', async (event, enabled) => {
   } catch (error) {
     console.error('❌ Error setting window mode:', error);
     return { success: false, message: 'Error setting window mode: ' + error.message };
+  }
+});
+
+// NEW: Screen capture sources for screen sharing
+ipcMain.handle('get-desktop-sources', async () => {
+  try {
+    console.log('📺 Getting desktop capture sources...');
+    const sources = await desktopCapturer.getSources({ 
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 0, height: 0 } // Don't generate thumbnails - too large for IPC
+    });
+    
+    console.log(`✅ Found ${sources.length} sources`);
+    
+    // Filter out non-capturable sources and return only essential data
+    const capturableSources = sources
+      .filter(source => {
+        // Filter out non-capturable windows
+        const name = source.name.toLowerCase();
+        // Skip Windows system dialogs and protected windows
+        if (name.includes('task switching') || 
+            name.includes('program manager') ||
+            name.includes('settings') ||
+            source.id.includes('window:0:0')) {
+          return false;
+        }
+        return true;
+      })
+      .map(source => ({
+        id: source.id,
+        name: source.name,
+        // Don't send thumbnail - too large for IPC
+      }));
+    
+    console.log(`✅ Returning ${capturableSources.length} capturable sources`);
+    return capturableSources;
+  } catch (error) {
+    console.error('❌ Error getting desktop sources:', error);
+    throw error;
   }
 });
 

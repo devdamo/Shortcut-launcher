@@ -268,20 +268,101 @@ class ScreenShareManager {
         try {
             console.log('🎥 Starting screen share...');
             
-            // Request screen capture with audio
-            this.localStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    cursor: 'always',
-                    displaySurface: 'monitor'
-                },
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
-                }
-            });
+            // Check if Electron API is available
+            if (!window.electronAPI || !window.electronAPI.getDesktopSources) {
+                throw new Error('Screen capture not supported in this environment');
+            }
             
-            console.log('✅ Screen capture started');
+            // Get available sources from Electron
+            const sources = await window.electronAPI.getDesktopSources();
+            
+            if (!sources || sources.length === 0) {
+                throw new Error('No screen sources available. Try closing this app and reopening it.');
+            }
+            
+            console.log(`📺 Found ${sources.length} capturable sources`);
+            
+            // Prefer screens over windows
+            const primaryScreen = sources.find(source => source.id.startsWith('screen')) || sources[0];
+            
+            console.log(`📺 Selected source: ${primaryScreen.name} (ID: ${primaryScreen.id})`);
+            
+            // Request video stream using the source ID
+            try {
+                const videoStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: primaryScreen.id,
+                            minWidth: 1280,
+                            maxWidth: 1920,
+                            minHeight: 720,
+                            maxHeight: 1080,
+                            frameRate: { ideal: 30, max: 60 }
+                        }
+                    }
+                });
+                
+                console.log('✅ Video stream captured successfully');
+                console.log('  Video tracks:', videoStream.getVideoTracks().length);
+                
+                // Try to capture system audio separately
+                let audioStream = null;
+                try {
+                    audioStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            mandatory: {
+                                chromeMediaSource: 'desktop'
+                            }
+                        },
+                        video: false
+                    });
+                    console.log('✅ Audio stream captured successfully');
+                } catch (audioError) {
+                    console.warn('⚠️ Could not capture system audio:', audioError.message);
+                    console.log('Screen will be shared without audio');
+                }
+                
+                // Combine video and audio streams
+                if (audioStream) {
+                    const audioTrack = audioStream.getAudioTracks()[0];
+                    videoStream.addTrack(audioTrack);
+                    this.localStream = videoStream;
+                    console.log('✅ Screen capture started with audio');
+                } else {
+                    this.localStream = videoStream;
+                    console.log('✅ Screen capture started (video only)');
+                }
+            } catch (captureError) {
+                console.error('❌ Failed to capture screen:', captureError);
+                
+                // If first source failed, try the next one
+                if (sources.length > 1) {
+                    console.log('⚠️ Trying next available source...');
+                    const nextSource = sources[1];
+                    console.log(`📺 Trying source: ${nextSource.name}`);
+                    
+                    const videoStream = await navigator.mediaDevices.getUserMedia({
+                        audio: false,
+                        video: {
+                            mandatory: {
+                                chromeMediaSource: 'desktop',
+                                chromeMediaSourceId: nextSource.id,
+                                minWidth: 1280,
+                                maxWidth: 1920,
+                                minHeight: 720,
+                                maxHeight: 1080
+                            }
+                        }
+                    });
+                    
+                    this.localStream = videoStream;
+                    console.log('✅ Screen capture started with alternative source (video only)');
+                } else {
+                    throw captureError;
+                }
+            }
             
             // Notify server we're sharing
             this.sendMessage({
@@ -299,7 +380,19 @@ class ScreenShareManager {
             
         } catch (error) {
             console.error('❌ Error starting screen share:', error);
-            alert('Failed to start screen sharing: ' + error.message);
+            
+            let errorMessage = 'Failed to start screen sharing: ' + error.message;
+            
+            // Provide helpful error messages
+            if (error.message.includes('not supported')) {
+                errorMessage = 'Screen capture is not available. Please make sure you\'re using the Electron app, not a web browser.';
+            } else if (error.message.includes('Permission denied')) {
+                errorMessage = 'Screen capture permission denied. Please allow screen recording in your system settings.';
+            } else if (error.message.includes('No screen sources')) {
+                errorMessage = 'No screens or windows available to share. Please make sure you have at least one display connected.';
+            }
+            
+            alert(errorMessage);
         }
     }
     
@@ -337,7 +430,12 @@ class ScreenShareManager {
         
         if (this.isSharing) {
             indicator.className = 'indicator sharing';
-            text.textContent = 'Sharing your screen';
+            const viewerCount = this.peerConnections.size;
+            if (viewerCount > 0) {
+                text.textContent = `Sharing your screen (${viewerCount} viewer${viewerCount > 1 ? 's' : ''})`;
+            } else {
+                text.textContent = 'Sharing your screen (no viewers yet)';
+            }
             startBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
         } else {
@@ -361,14 +459,17 @@ class ScreenShareManager {
             const pc = new RTCPeerConnection(this.rtcConfig);
             this.peerConnections.set(viewerId, pc);
             
+            console.log('📹 Adding tracks to peer connection...');
             // Add local stream tracks to peer connection
             this.localStream.getTracks().forEach(track => {
+                console.log(`  Adding ${track.kind} track:`, track.label);
                 pc.addTrack(track, this.localStream);
             });
             
             // Handle ICE candidates
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
+                    console.log('🧊 Sending ICE candidate to viewer');
                     this.sendMessage({
                         type: 'ice-candidate',
                         targetId: viewerId,
@@ -377,10 +478,28 @@ class ScreenShareManager {
                 }
             };
             
+            // Monitor connection state
+            pc.onconnectionstatechange = () => {
+                console.log(`🔌 Connection state with ${viewerUsername}: ${pc.connectionState}`);
+                if (pc.connectionState === 'connected') {
+                    console.log(`✅ ${viewerUsername} is now viewing your screen`);
+                    this.updateShareUI(); // Update viewer count
+                } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                    console.log(`❌ ${viewerUsername} disconnected`);
+                    this.peerConnections.delete(viewerId);
+                    this.updateShareUI(); // Update viewer count
+                }
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                console.log(`🧊 ICE connection state with ${viewerUsername}: ${pc.iceConnectionState}`);
+            };
+            
             // Create and send offer
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
+            console.log('📤 Sending offer to viewer');
             this.sendMessage({
                 type: 'offer',
                 targetId: viewerId,
@@ -404,14 +523,63 @@ class ScreenShareManager {
             
             // Handle incoming stream
             pc.ontrack = (event) => {
-                console.log('📺 Receiving remote stream');
-                const remoteVideo = document.getElementById('remote-video');
-                remoteVideo.srcObject = event.streams[0];
+                console.log('📺 Receiving remote stream - ontrack event');
+                console.log('  Track kind:', event.track.kind);
+                console.log('  Track label:', event.track.label);
+                console.log('  Streams:', event.streams.length);
+                
+                if (event.streams && event.streams[0]) {
+                    const remoteVideo = document.getElementById('remote-video');
+                    const videoStatus = document.getElementById('video-status');
+                    
+                    if (remoteVideo) {
+                        console.log('✅ Setting remote video srcObject');
+                        remoteVideo.srcObject = event.streams[0];
+                        
+                        if (videoStatus) videoStatus.textContent = 'Connecting...';
+                        
+                        // Make sure video plays
+                        remoteVideo.onloadedmetadata = () => {
+                            console.log('✅ Video metadata loaded, playing...');
+                            if (videoStatus) videoStatus.textContent = 'Loading...';
+                            remoteVideo.play().catch(e => {
+                                console.error('❌ Error playing video:', e);
+                                if (videoStatus) videoStatus.textContent = 'Error: ' + e.message;
+                            });
+                        };
+                        
+                        // Monitor video element
+                        remoteVideo.onplay = () => {
+                            console.log('▶️ Video started playing');
+                            if (videoStatus) videoStatus.textContent = 'Connected';
+                            setTimeout(() => {
+                                if (videoStatus) videoStatus.textContent = '';
+                            }, 3000);
+                        };
+                        
+                        remoteVideo.onerror = (e) => {
+                            console.error('❌ Video error:', e);
+                            if (videoStatus) videoStatus.textContent = 'Video Error';
+                        };
+                        
+                        // Debug: Check video dimensions
+                        setTimeout(() => {
+                            console.log('Video dimensions:', remoteVideo.videoWidth, 'x', remoteVideo.videoHeight);
+                            console.log('Video ready state:', remoteVideo.readyState);
+                            console.log('Video paused:', remoteVideo.paused);
+                        }, 2000);
+                    } else {
+                        console.error('❌ Remote video element not found!');
+                    }
+                } else {
+                    console.error('❌ No streams in track event!');
+                }
             };
             
             // Handle ICE candidates
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
+                    console.log('🧊 Sending ICE candidate to sharer');
                     this.sendMessage({
                         type: 'ice-candidate',
                         targetId: senderId,
@@ -420,11 +588,24 @@ class ScreenShareManager {
                 }
             };
             
+            // Monitor connection state
+            pc.onconnectionstatechange = () => {
+                console.log(`🔌 Connection state: ${pc.connectionState}`);
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                console.log(`🧊 ICE connection state: ${pc.iceConnectionState}`);
+            };
+            
             // Set remote description and create answer
+            console.log('📝 Setting remote description...');
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            console.log('📝 Creating answer...');
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             
+            console.log('📤 Sending answer');
             this.sendMessage({
                 type: 'answer',
                 targetId: senderId,

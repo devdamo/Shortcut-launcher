@@ -41,7 +41,10 @@ try {
     installRustDesk: () => ipcRenderer.invoke('install-rustdesk'),
     
     // NEW: Window mode control
-    setDesktopMode: (enabled) => ipcRenderer.invoke('set-desktop-mode', enabled)
+    setDesktopMode: (enabled) => ipcRenderer.invoke('set-desktop-mode', enabled),
+    
+    // NEW: Screen capture for screen sharing (uses IPC to main process)
+    getDesktopSources: () => ipcRenderer.invoke('get-desktop-sources')
   });
   
   console.log('✅ electronAPI exposed successfully');
