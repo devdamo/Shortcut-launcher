@@ -1,0 +1,1005 @@
+/* SHORTCUT LAUNCHER - BLACK & WHITE THEME */
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #000000;
+    color: #ffffff;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    user-select: none;
+    cursor: default;
+    transition: background 0.3s ease;
+}
+
+/* Top Bar - Fixed positioning for fullscreen */
+.top-bar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 1000;
+    padding: 15px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0));
+    pointer-events: none;
+}
+
+.top-bar-controls {
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+}
+
+.control-btn {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #ffffff;
+    padding: 10px 18px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    border-radius: 0;
+    min-width: 60px;
+    text-align: center;
+}
+
+.control-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+    transform: translateY(-2px);
+}
+
+.control-btn:active {
+    transform: translateY(0);
+}
+
+/* Add button in top bar */
+.add-btn {
+    font-size: 24px;
+    font-weight: bold;
+    min-width: 50px;
+    padding: 8px 16px;
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.add-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+    transform: translateY(-2px) scale(1.05);
+}
+
+.close-btn {
+    font-size: 18px;
+    font-weight: bold;
+    min-width: 45px;
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.close-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+}
+
+.admin-btn {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.admin-btn:hover {
+    background-color: #000000;
+}
+
+.rustdesk-btn {
+    background-color: #ffffff;
+    color: #000000;
+    font-size: 12px;
+    min-width: 80px;
+}
+
+.rustdesk-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+    transform: translateY(-2px);
+}
+
+.rustdesk-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.rustdesk-btn:disabled:hover {
+    background-color: #ffffff;
+    color: #000000;
+    transform: none;
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+    padding: 20px;
+}
+
+/* Empty State - Clean message when no shortcuts */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    max-width: 400px;
+}
+
+.empty-icon {
+    font-size: 72px;
+    margin-bottom: 10px;
+    opacity: 0.7;
+}
+
+.empty-state h2 {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.empty-state p {
+    color: #cccccc;
+    font-size: 16px;
+    line-height: 1.4;
+}
+
+.empty-state strong {
+    color: #ffffff;
+    font-weight: bold;
+}
+
+/* Shortcuts Grid - UPDATED DEFAULT SIZE TO 250x700 */
+.shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 25px;
+    padding: 40px;
+    max-width: 95vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    width: 100%;
+    position: relative;
+}
+
+.shortcut-item {
+    background-color: #ffffff;
+    color: #000000;
+    border: 3px solid #ffffff;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.15s ease-out; /* IMPROVED: Faster, smoother transitions */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 15px;
+    
+    /* UPDATED: New default size - tall rectangles */
+    resize: none; /* DISABLED: Remove browser default resize */
+    overflow: hidden;
+    min-width: 150px;
+    min-height: 200px;
+    max-width: 600px;
+    max-height: 1000px;
+    width: 250px;        /* NEW: Default width */
+    height: 700px;       /* NEW: Default height */
+    
+    position: relative;
+    border-radius: 0;
+    
+    /* IMPROVED: Better interaction states */
+    user-select: none;
+    will-change: transform; /* Optimize for animations */
+}
+
+.shortcut-item:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+    transform: scale(1.01);
+}
+
+/* NEW: Custom resize handles for fluid resizing */
+.shortcut-item::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(-45deg, transparent 0%, transparent 40%, #ffffff 40%, #ffffff 60%, transparent 60%);
+    cursor: nw-resize;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 15;
+    pointer-events: none;
+}
+
+.shortcut-item:hover::after {
+    opacity: 0.8;
+    pointer-events: auto;
+}
+
+.shortcut-item.resizing {
+    transition: none; /* Disable transitions during resize */
+    transform: scale(1.02);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    z-index: 20;
+}
+
+.shortcut-item.resizing::after {
+    opacity: 1;
+    background: linear-gradient(-45deg, transparent 0%, transparent 30%, #ffffff 30%, #ffffff 70%, transparent 70%);
+}
+
+/* NEW: Keyboard focus styling */
+.shortcut-item.keyboard-focused {
+    background-color: #333333;
+    color: #ffffff;
+    border-color: #ffffff;
+    border-width: 4px;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+    transform: scale(1.02);
+    z-index: 10;
+    position: relative;
+}
+
+.shortcut-item.keyboard-focused:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+    box-shadow: 0 0 25px rgba(255, 255, 255, 0.7);
+    transform: scale(1.03);
+}
+
+.shortcut-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+    width: 100%;
+    height: 30%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-height: 80px;
+}
+
+/* UPDATED: Better image scaling for tall containers */
+.shortcut-icon img {
+    max-width: 85%;
+    max-height: 85%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    object-position: center;
+}
+
+.shortcut-name {
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    line-height: 1.3;
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    overflow: hidden;
+    padding: 10px;
+}
+
+.shortcut-delete {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background-color: #000000;
+    color: #ffffff;
+    border: 1px solid #ffffff;
+    width: 26px;
+    height: 26px;
+    border-radius: 0;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.shortcut-item:hover .shortcut-delete {
+    display: flex;
+}
+
+.shortcut-delete:hover {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+/* Modal Styles - BLACK & WHITE */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    z-index: 2000;
+    backdrop-filter: blur(2px);
+}
+
+.modal-content {
+    background-color: #000000;
+    border: 4px solid #ffffff;
+    margin: 5vh auto;
+    padding: 0;
+    width: 90%;
+    max-width: 600px;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: 0;
+}
+
+/* UPDATED: Larger admin modal for background settings */
+.admin-modal-content {
+    max-width: 800px;
+    max-height: 90vh;
+}
+
+.modal-header {
+    background-color: #ffffff;
+    color: #000000;
+    padding: 20px 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #ffffff;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #000000;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: #666666;
+}
+
+.modal-body {
+    padding: 25px;
+}
+
+/* Form Styles - BLACK & WHITE */
+.form-group {
+    margin-bottom: 25px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #ffffff;
+    background-color: #000000;
+    color: #ffffff;
+    font-size: 14px;
+    border-radius: 0;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #ffffff;
+    background-color: #111111;
+}
+
+.form-group input::placeholder {
+    color: #cccccc;
+}
+
+.path-input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.path-input-group input {
+    flex: 1;
+}
+
+.browse-btn {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #ffffff;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 0;
+    transition: all 0.2s ease;
+}
+
+.browse-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.form-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: flex-end;
+    margin-top: 30px;
+}
+
+.save-btn,
+.cancel-btn {
+    padding: 12px 25px;
+    border: 2px solid #ffffff;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 0;
+    transition: all 0.2s ease;
+}
+
+.save-btn {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.save-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.cancel-btn {
+    background-color: #000000;
+    color: #ffffff;
+    border: 2px solid #ffffff;
+}
+
+.cancel-btn:hover {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+/* Icon Preview - BLACK & WHITE */
+.icon-preview-container {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 15px;
+    border: 2px solid #ffffff;
+    background-color: #000000;
+}
+
+.icon-preview {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #000000;
+    border: 2px solid #ffffff;
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.icon-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.extract-icon-btn {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #ffffff;
+    padding: 10px 18px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 0;
+    transition: all 0.2s ease;
+}
+
+.extract-icon-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.extract-icon-btn:disabled {
+    background-color: #333333;
+    color: #666666;
+    border-color: #666666;
+    cursor: not-allowed;
+}
+
+.icon-status {
+    font-size: 12px;
+    color: #ffffff;
+    flex-grow: 1;
+}
+
+.icon-status.loading {
+    color: #cccccc;
+}
+
+.icon-status.success {
+    color: #ffffff;
+}
+
+.icon-status.error {
+    color: #ffffff;
+}
+
+/* NEW: Background Settings Styles */
+.background-option {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 2px solid #ffffff;
+    background-color: #000000;
+}
+
+.background-option label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: bold;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+.background-option select,
+.background-option input {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #ffffff;
+    background-color: #000000;
+    color: #ffffff;
+    font-size: 14px;
+    border-radius: 0;
+}
+
+.image-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.image-controls button {
+    flex: 1;
+}
+
+#image-preview {
+    max-width: 100%;
+    max-height: 200px;
+    border: 2px solid #ffffff;
+    background-color: #111111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cccccc;
+    font-size: 14px;
+    min-height: 60px;
+}
+
+#image-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+}
+
+.background-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 2px solid #ffffff;
+}
+
+#background-opacity {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px;
+    background: #333333;
+    outline: none;
+    border-radius: 0;
+}
+
+#background-opacity::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    cursor: pointer;
+    border-radius: 0;
+}
+
+#background-opacity::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    cursor: pointer;
+    border-radius: 0;
+    border: none;
+}
+
+#opacity-value {
+    font-weight: bold;
+    color: #ffffff;
+    margin-left: 10px;
+}
+
+/* Admin Panel - BLACK & WHITE */
+.admin-section {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #ffffff;
+}
+
+.admin-section:last-child {
+    border-bottom: none;
+}
+
+.admin-section h3 {
+    margin-bottom: 15px;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+#pc-info,
+#db-status,
+#shortcuts-list,
+#background-settings {
+    background-color: #000000;
+    padding: 15px;
+    border: 2px solid #ffffff;
+    margin-top: 10px;
+    color: #ffffff;
+}
+
+#pc-info p,
+#db-status p {
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+#pc-info strong,
+#db-status strong {
+    color: #ffffff;
+}
+
+/* Loading - BLACK & WHITE */
+.loading {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.95);
+    z-index: 3000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.loading-spinner {
+    width: 60px;
+    height: 60px;
+    border: 4px solid #333333;
+    border-top: 4px solid #ffffff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 25px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading p {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Scrollbar styling - BLACK & WHITE */
+::-webkit-scrollbar {
+    width: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #ffffff;
+    border: 2px solid #000000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #cccccc;
+}
+
+::-webkit-scrollbar-corner {
+    background: #000000;
+}
+
+/* Utility classes */
+.hidden {
+    display: none !important;
+}
+
+.show {
+    display: flex !important;
+}
+
+.text-center {
+    text-align: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .shortcuts-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 20px;
+        padding: 30px;
+    }
+    
+    .shortcut-item {
+        width: 200px;
+        height: 600px;
+    }
+}
+
+@media (max-width: 800px) {
+    .shortcuts-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        padding: 20px;
+    }
+    
+    .shortcut-item {
+        width: 160px;
+        height: 500px;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 2vh auto;
+    }
+    
+    .admin-modal-content {
+        width: 98%;
+    }
+    
+    .top-bar-controls {
+        gap: 8px;
+    }
+    
+    .control-btn {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+    
+    .empty-state h2 {
+        font-size: 20px;
+    }
+    
+    .empty-state p {
+        font-size: 14px;
+    }
+    
+    .empty-icon {
+        font-size: 48px;
+    }
+}
+
+/* Special effects for missing software */
+.shortcut-item.software-missing {
+    opacity: 0.6;
+    border-style: dashed;
+}
+
+.shortcut-item.software-missing:hover {
+    opacity: 0.8;
+}
+
+/* No-select for UI elements */
+.control-btn,
+.shortcut-item,
+.modal-close,
+.browse-btn,
+.extract-icon-btn,
+.save-btn,
+.cancel-btn {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Ensure proper cursor for interactive elements */
+.control-btn,
+.shortcut-item,
+.modal-close,
+.browse-btn,
+.extract-icon-btn,
+.save-btn,
+.cancel-btn {
+    cursor: pointer;
+}
+
+.shortcut-item:hover {
+    cursor: pointer;
+}
+
+/* Prevent text selection on draggable areas */
+.shortcut-item {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Focus states for accessibility */
+.control-btn:focus,
+.form-group input:focus,
+.form-group select:focus,
+.browse-btn:focus,
+.extract-icon-btn:focus,
+.save-btn:focus,
+.cancel-btn:focus {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+/* Better scaling for larger containers */
+.shortcut-item {
+    container-type: inline-size;
+}
+
+@container (min-width: 300px) {
+    .shortcut-icon {
+        height: 35%;
+    }
+    
+    .shortcut-name {
+        font-size: 18px;
+    }
+}
+
+@container (min-width: 400px) {
+    .shortcut-icon {
+        height: 40%;
+    }
+    
+    .shortcut-name {
+        font-size: 20px;
+    }
+}
+
+/* UPDATED: Better proportions for tall shortcuts */
+@container (min-height: 600px) {
+    .shortcut-icon {
+        height: 25%;
+        font-size: 64px;
+    }
+    
+    .shortcut-name {
+        font-size: 18px;
+        padding: 15px;
+    }
+}
+
+@container (min-height: 800px) {
+    .shortcut-icon {
+        height: 20%;
+        font-size: 80px;
+    }
+    
+    .shortcut-name {
+        font-size: 22px;
+        padding: 20px;
+    }
+}
+
+/* NEW: Window settings styling */
+.window-option {
+    margin-bottom: 15px;
+}
+
+.window-option label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.window-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #ffffff;
+}
+
+.window-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.window-actions .save-btn {
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid #ffffff;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+.window-actions .save-btn:hover {
+    background-color: #000000;
+    color: #ffffff;
+    border-color: #ffffff;
+}

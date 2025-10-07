@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortcut Launcher</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Top Bar with Add, Admin, RustDesk and Close buttons -->
+    <div class="top-bar">
+        <div class="top-bar-controls">
+            <button id="add-shortcut-btn" class="control-btn add-btn">+</button>
+            <button id="admin-btn" class="control-btn admin-btn">Admin</button>
+            <button id="rustdesk-btn" class="control-btn rustdesk-btn">📡 RustDesk</button>
+            <button id="close-btn" class="control-btn close-btn">×</button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <!-- Empty state message (when no shortcuts) -->
+        <div id="empty-state" class="empty-state">
+            <div class="empty-icon">📦</div>
+            <h2>No Shortcuts Yet</h2>
+            <p>Click the <strong>+</strong> button above to add your first shortcut</p>
+        </div>
+
+        <!-- Shortcuts Grid -->
+        <div id="shortcuts-grid" class="shortcuts-grid"></div>
+    </div>
+
+    <!-- Modal for adding shortcuts -->
+    <div id="add-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Shortcut</h2>
+                <button id="modal-close" class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="shortcut-name">Name:</label>
+                    <input type="text" id="shortcut-name" placeholder="Enter shortcut name">
+                </div>
+                <div class="form-group">
+                    <label for="shortcut-type">Type:</label>
+                    <select id="shortcut-type">
+                        <option value="software">Software</option>
+                        <option value="website">Website</option>
+                    </select>
+                </div>
+                <div class="form-group" id="path-group">
+                    <label for="shortcut-path">Path/URL:</label>
+                    <div class="path-input-group">
+                        <input type="text" id="shortcut-path" placeholder="Enter path or URL">
+                        <button id="browse-btn" class="browse-btn">Browse</button>
+                    </div>
+                </div>
+                <div class="form-group" id="icon-preview-group">
+                    <label>Icon Preview:</label>
+                    <div class="icon-preview-container">
+                        <div id="icon-preview" class="icon-preview">📦</div>
+                        <button id="extract-icon-btn" class="extract-icon-btn">Extract Icon</button>
+                        <span id="icon-status" class="icon-status"></span>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button id="save-shortcut" class="save-btn">Save</button>
+                    <button id="cancel-add" class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="modal">
+        <div class="modal-content admin-modal-content">
+            <div class="modal-header">
+                <h2>Admin Panel</h2>
+                <button id="admin-modal-close" class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="admin-section">
+                    <h3>Window Settings</h3>
+                    <div id="window-settings">
+                        <div class="window-option">
+                            <label>
+                                <input type="checkbox" id="desktop-mode" />
+                                Wallpaper Mode (stays behind other windows)
+                            </label>
+                            <p style="font-size: 12px; color: #ccc; margin-top: 5px;">
+                                When enabled, the launcher stays behind other windows like a desktop widget.
+                                <br><strong>No compilation required!</strong> Pure Electron implementation.
+                            </p>
+                        </div>
+                        <div class="window-actions">
+                            <button id="apply-window-settings" class="save-btn">Apply Window Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <h3>Background Settings</h3>
+                    <div id="background-settings">
+                        <div class="background-option">
+                            <label>Background Type:</label>
+                            <select id="background-type">
+                                <option value="solid">Solid Color (Black)</option>
+                                <option value="gradient">Gradient</option>
+                                <option value="image">Background Image</option>
+                            </select>
+                        </div>
+                        
+                        <div id="gradient-options" class="background-option" style="display: none;">
+                            <label>Gradient Style:</label>
+                            <select id="gradient-style">
+                                <option value="linear-black-gray">Black to Gray</option>
+                                <option value="linear-gray-black">Gray to Black</option>
+                                <option value="radial-black-gray">Radial Black to Gray</option>
+                                <option value="diagonal-black-gray">Diagonal Black to Gray</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <div id="custom-gradient" style="display: none; margin-top: 10px;">
+                                <input type="text" id="gradient-css" placeholder="Enter CSS gradient (e.g., linear-gradient(45deg, #000, #333))" style="width: 100%;">
+                            </div>
+                        </div>
+                        
+                        <div id="image-options" class="background-option" style="display: none;">
+                            <label>Background Image:</label>
+                            <div class="image-controls">
+                                <button id="browse-background" class="browse-btn">Choose Image</button>
+                                <button id="remove-background" class="cancel-btn">Remove Image</button>
+                            </div>
+                            <div id="image-preview" style="margin-top: 10px;"></div>
+                            <div style="margin-top: 10px;">
+                                <label>Image Settings:</label>
+                                <select id="background-size">
+                                    <option value="cover">Cover (fill screen)</option>
+                                    <option value="contain">Contain (fit in screen)</option>
+                                    <option value="stretch">Stretch</option>
+                                    <option value="tile">Tile/Repeat</option>
+                                </select>
+                                <label style="margin-top: 10px; display: block;">Opacity:</label>
+                                <input type="range" id="background-opacity" min="10" max="100" value="100" style="width: 100%;">
+                                <span id="opacity-value">100%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="background-actions">
+                            <button id="apply-background" class="save-btn">Apply Background</button>
+                            <button id="reset-background" class="cancel-btn">Reset to Default</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-section">
+                    <h3>PC Information</h3>
+                    <div id="pc-info"></div>
+                </div>
+                <div class="admin-section">
+                    <h3>Database Status</h3>
+                    <div id="db-status"></div>
+                </div>
+                <div class="admin-section">
+                    <h3>Shortcuts Management</h3>
+                    <div id="shortcuts-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
