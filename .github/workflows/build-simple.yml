@@ -1,0 +1,93 @@
+name: Build Simple (No External Actions)
+
+# This is a simpler workflow that doesn't depend on external retry actions
+# Use this if the main workflow has issues with dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'windows'
+        type: choice
+        options:
+          - windows
+          - linux
+          - macos
+          - all
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Clear npm cache (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          npm cache clean --force
+          Write-Host "NPM cache cleared"
+
+      - name: Install dependencies (Attempt 1)
+        id: install1
+        continue-on-error: true
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Install dependencies (Attempt 2)
+        if: steps.install1.outcome == 'failure'
+        id: install2
+        continue-on-error: true
+        run: |
+          echo "First attempt failed, retrying..."
+          npm cache clean --force
+          npm ci --prefer-offline --no-audit
+
+      - name: Install dependencies (Attempt 3 - fallback)
+        if: steps.install2.outcome == 'failure'
+        run: |
+          echo "Using npm install as fallback..."
+          npm install
+
+      - name: Verify installation
+        run: |
+          node --version
+          npm --version
+          npx electron --version
+
+      - name: Build app
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: |
+          echo "Build artifacts:"
+          ls -la dist/ || dir dist\
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-build
+          path: dist/
+          retention-days: 7

@@ -39,20 +39,36 @@ jobs:
         run: |
           # Clear npm cache to avoid permission issues
           npm cache clean --force
-          # Set electron mirror for faster downloads
-          [System.Environment]::SetEnvironmentVariable('ELECTRON_MIRROR', 'https://npmmirror.com/mirrors/electron/', 'Process')
+          Write-Host "✅ NPM cache cleared"
 
-      - name: Install dependencies (with retry)
-        uses: nick-fields/retry-action@v2
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_wait_seconds: 30
-          command: npm ci --legacy-peer-deps
-          shell: bash
+      - name: Install dependencies (Attempt 1)
+        id: install1
+        continue-on-error: true
+        run: npm ci --prefer-offline --no-audit
+        timeout-minutes: 10
+
+      - name: Install dependencies (Attempt 2)
+        if: steps.install1.outcome == 'failure'
+        id: install2
+        continue-on-error: true
+        run: |
+          echo "⚠️ First install attempt failed, retrying..."
+          npm cache clean --force
+          npm ci --prefer-offline --no-audit
+        timeout-minutes: 10
+
+      - name: Install dependencies (Attempt 3 - fallback)
+        if: steps.install2.outcome == 'failure'
+        run: |
+          echo "⚠️ Using npm install as fallback..."
+          npm install
+        timeout-minutes: 10
 
       - name: Verify Electron installation
-        run: npx electron --version
+        run: |
+          node --version
+          npm --version
+          npx electron --version
 
       - name: Build app (Windows)
         if: matrix.os == 'windows-latest'
@@ -80,27 +96,27 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: |
-            dist/*.exe
-            dist/*.zip
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload artifacts (Linux)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: |
-            dist/*.AppImage
-            dist/*.deb
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload artifacts (macOS)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
 
   release:
     needs: build
@@ -116,15 +132,26 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts (debug)
+        run: |
+          echo "📦 Listing downloaded artifacts:"
+          find artifacts -type f -ls
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          # Copy all build files to release-files directory
+          find artifacts -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.zip" \) -exec cp {} release-files/ \;
+          echo "📦 Release files prepared:"
+          ls -lh release-files/
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/windows-build/*
-            artifacts/linux-build/*
-            artifacts/macos-build/*
+          files: release-files/*
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

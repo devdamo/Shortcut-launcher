@@ -179,15 +179,42 @@ Update version in `package.json`:
 - Make sure the token has `repo` scope
 - Check that the repository URL in `package.json` is correct
 
+### npm ci fails in GitHub Actions (Windows)
+**Error:** `EPERM: operation not permitted` or `command failed`
+
+**Solutions:**
+1. The workflow has automatic retry logic (3 attempts)
+2. Clears npm cache between retries
+3. Falls back to `npm install` if `npm ci` fails
+4. If still failing, try the simpler workflow:
+   - Go to Actions tab → Build Simple → Run workflow
+
+### Electron installation fails
+**Error:** `electron install.js failed`
+
+**Solutions:**
+1. Workflow automatically retries installation
+2. Uses `--prefer-offline` flag to use cached packages
+3. Verifies electron installation before building
+4. Check Actions logs for detailed error messages
+
 ### Build works locally but fails in GitHub Actions
 - Check that all files are committed and pushed
 - Verify GitHub Actions has permission to create releases
 - Check the Actions tab for detailed error logs
+- Try running the "Build Simple" workflow for debugging
+- Check if `node_modules/` is properly ignored in `.gitignore`
 
 ### macOS build fails on Windows/Linux
 - macOS builds require running on macOS
 - Use GitHub Actions for cross-platform builds
 - Or only build for your current platform
+
+### "No artifacts found" error
+- Make sure the build completes successfully
+- Check that `dist/` folder contains build outputs
+- Verify file patterns match your build outputs
+- Build outputs are configured to fail if no files are found (catches build issues early)
 
 ## GitHub Actions Workflow
 
