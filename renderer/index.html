@@ -61,7 +61,10 @@
                     <label>Icon Preview:</label>
                     <div class="icon-preview-container">
                         <div id="icon-preview" class="icon-preview">📦</div>
-                        <button id="extract-icon-btn" class="extract-icon-btn">Extract Icon</button>
+                        <div class="icon-actions">
+                            <button id="extract-icon-btn" class="extract-icon-btn">Extract Icon</button>
+                            <button id="browse-icon-btn" class="browse-icon-btn">Browse Image</button>
+                        </div>
                         <span id="icon-status" class="icon-status"></span>
                     </div>
                 </div>
@@ -174,16 +177,19 @@
     <div id="screenshare-modal" class="modal">
         <div class="modal-content screenshare-modal-content">
             <div class="modal-header">
-                <h2>Screen Share</h2>
+                <h2>📺 Direct P2P Screen Share</h2>
                 <button id="screenshare-modal-close" class="modal-close">×</button>
             </div>
             <div class="modal-body">
                 <!-- Connection Settings -->
                 <div class="screenshare-section" id="connection-section">
-                    <h3>Connection Settings</h3>
+                    <h3>🔑 Connection Code</h3>
+                    <p style="font-size: 12px; color: #ccc; margin-bottom: 15px;">
+                        No relay server needed! Direct peer-to-peer connection.
+                    </p>
                     <div class="form-group">
-                        <label for="server-url">Relay Server URL:</label>
-                        <input type="text" id="server-url" placeholder="ws://your-server.com:9090" />
+                        <label for="server-url">Your Connection Code:</label>
+                        <input type="text" id="server-url" placeholder="Click 'Generate Code' to get started" readonly style="cursor: pointer;" />
                     </div>
                     <div class="form-group">
                         <label for="username">Username:</label>
@@ -193,8 +199,9 @@
                         <span id="connection-indicator" class="indicator disconnected">●</span>
                         <span id="connection-text">Disconnected</span>
                     </div>
-                    <div class="connection-actions">
-                        <button id="connect-btn" class="save-btn">Connect</button>
+                    <div class="connection-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="connect-btn" class="save-btn">🔑 Generate Code</button>
+                        <button id="join-code-btn" class="save-btn" style="background: #2196F3; border-color: #2196F3;">📥 Join with Code</button>
                         <button id="disconnect-btn" class="cancel-btn" style="display: none;">Disconnect</button>
                     </div>
                 </div>
@@ -240,11 +247,21 @@
         </div>
     </div>
 
+    <!-- Windows Taskbar (Bottom Center) -->
+    <div id="windows-taskbar" class="windows-taskbar">
+        <div id="taskbar-windows" class="taskbar-windows">
+            <!-- Open windows will be shown here -->
+        </div>
+    </div>
+
     <!-- Loading overlay -->
     <div id="loading" class="loading">
         <div class="loading-spinner"></div>
         <p>Loading...</p>
     </div>
+
+    <!-- PeerJS for P2P connections -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <script src="app.js"></script>
     <script src="screenshare.js"></script>

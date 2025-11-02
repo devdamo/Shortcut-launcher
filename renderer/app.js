@@ -9,6 +9,9 @@ class ShortcutLauncher {
         this.currentFocusIndex = 0; // NEW: Track focused shortcut for keyboard navigation
         this.isResizing = false; // NEW: Track if we're currently resizing
         this.resizeData = null; // NEW: Track resize operation data
+        this.taskbarRefreshInterval = null; // NEW: Track taskbar refresh interval
+        this.openWindows = []; // NEW: Track open windows
+        this.editingShortcutId = null; // NEW: Track which shortcut is being edited
         this.init();
     }
 
@@ -63,7 +66,12 @@ class ShortcutLauncher {
             console.log('Step 5: Finalizing initialization...');
             this.showLoading(false);
             console.log('✅ Shortcut Launcher initialized successfully');
-            
+
+            // Step 6: Start taskbar (window list)
+            console.log('Step 6: Starting taskbar...');
+            this.startTaskbar();
+            console.log('✅ Taskbar started');
+
         } catch (error) {
             console.error('❌ CRITICAL ERROR in init():', error);
             this.showLoading(false);
@@ -233,6 +241,13 @@ class ShortcutLauncher {
 
         // CRITICAL: Keyboard shortcuts for emergency controls + NAVIGATION
         document.addEventListener('keydown', async (e) => {
+            // Disable F11 (fullscreen toggle) - we're already in kiosk mode
+            if (e.key === 'F11') {
+                console.log('🚫 F11 blocked - Fullscreen toggle disabled in kiosk mode');
+                e.preventDefault();
+                return;
+            }
+
             // Emergency close - ALWAYS works
             if (e.ctrlKey && e.key === 'q') {
                 console.log('🔴 Ctrl+Q pressed - EMERGENCY CLOSE');
@@ -501,6 +516,12 @@ class ShortcutLauncher {
             extractIconBtn.addEventListener('click', () => this.extractIcon());
         }
 
+        // Browse icon image button
+        const browseIconBtn = document.getElementById('browse-icon-btn');
+        if (browseIconBtn) {
+            browseIconBtn.addEventListener('click', () => this.browseIconImage());
+        }
+
         // Cancel button
         const cancelBtn = document.getElementById('cancel-add');
         if (cancelBtn) {
@@ -653,26 +674,41 @@ class ShortcutLauncher {
         element.style.width = width + 'px';
         element.style.height = height + 'px';
 
-        // Use stored icon data or fallback to default icons
-        let iconHtml = '';
-        if (shortcut.icon_data) {
-            iconHtml = `<img src="${shortcut.icon_data}" alt="${shortcut.name} icon" />`;
-        } else {
-            // Fallback to emoji icons
-            let icon = '';
-            if (shortcut.type === 'website') {
-                icon = '🌐';
-            } else if (shortcut.type === 'software') {
-                icon = shortcut.exists_on_pc ? '💻' : '❌';
-            }
-            iconHtml = icon;
-        }
+        // Create icon container (will load async if using file path)
+        const iconContainer = document.createElement('div');
+        iconContainer.className = 'shortcut-icon';
 
-        element.innerHTML = `
-            <div class="shortcut-icon">${iconHtml}</div>
-            <div class="shortcut-name">${this.escapeHtml(shortcut.name)}</div>
-            <button class="shortcut-delete" onclick="launcher.deleteShortcut(${shortcut.id}); event.stopPropagation();">×</button>
-        `;
+        // Create name and delete button
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'shortcut-name';
+        nameDiv.textContent = shortcut.name;
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'shortcut-delete';
+        deleteBtn.textContent = '×';
+        deleteBtn.onclick = (e) => {
+            this.deleteShortcut(shortcut.id);
+            e.stopPropagation();
+        };
+
+        // NEW: Edit button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'shortcut-edit';
+        editBtn.textContent = '✎';
+        editBtn.title = 'Edit shortcut';
+        editBtn.onclick = (e) => {
+            this.editShortcut(shortcut.id);
+            e.stopPropagation();
+        };
+
+        // Append elements
+        element.appendChild(iconContainer);
+        element.appendChild(nameDiv);
+        element.appendChild(editBtn);
+        element.appendChild(deleteBtn);
+
+        // Load icon (async if using file path)
+        this.loadShortcutIcon(shortcut, iconContainer);
 
         // Add click handler for opening shortcut with improved resize detection
         element.addEventListener('click', (e) => {
@@ -747,7 +783,7 @@ class ShortcutLauncher {
                 this.showMessage('Cannot delete shortcut: Database not available');
                 return;
             }
-            
+
             const success = await window.dbAPI.deleteShortcut(id);
             if (success) {
                 await this.loadShortcuts();
@@ -761,20 +797,96 @@ class ShortcutLauncher {
         }
     }
 
+    // NEW: Edit shortcut
+    editShortcut(id) {
+        console.log(`✎ Edit shortcut: ${id}`);
+
+        // Find the shortcut
+        const shortcut = this.shortcuts.find(s => s.id === id);
+        if (!shortcut) {
+            console.error('Shortcut not found:', id);
+            return;
+        }
+
+        // Set edit mode
+        this.editingShortcutId = id;
+
+        // Populate the modal with existing data
+        const modal = document.getElementById('add-modal');
+        const modalHeader = modal.querySelector('.modal-header h2');
+        const nameInput = document.getElementById('shortcut-name');
+        const pathInput = document.getElementById('shortcut-path');
+        const typeSelect = document.getElementById('shortcut-type');
+        const iconPreview = document.getElementById('icon-preview');
+        const saveBtn = document.getElementById('save-shortcut');
+
+        // Update modal title
+        modalHeader.textContent = 'Edit Shortcut';
+        saveBtn.textContent = 'Save Changes';
+
+        // Fill in the form
+        nameInput.value = shortcut.name;
+        pathInput.value = shortcut.path;
+        typeSelect.value = shortcut.type;
+
+        // Load and show current icon
+        this.loadAndShowIcon(shortcut, iconPreview);
+
+        // Store current icon path
+        this.currentIconData = shortcut.icon_path || shortcut.icon_data;
+
+        // Show the modal
+        modal.style.display = 'block';
+    }
+
+    // Helper to load and show icon in preview
+    async loadAndShowIcon(shortcut, iconPreview) {
+        try {
+            if (shortcut.icon_path && window.electronAPI && window.electronAPI.loadIcon) {
+                const iconData = await window.electronAPI.loadIcon(shortcut.icon_path);
+                if (iconData) {
+                    iconPreview.innerHTML = `<img src="${iconData}" alt="Current icon" class="icon-highres" />`;
+                    return;
+                }
+            } else if (shortcut.icon_data) {
+                iconPreview.innerHTML = `<img src="${shortcut.icon_data}" alt="Current icon" />`;
+                return;
+            }
+
+            // Fallback to emoji
+            const icon = shortcut.type === 'website' ? '🌐' : '💻';
+            iconPreview.innerHTML = icon;
+        } catch (error) {
+            console.error('Error loading icon preview:', error);
+            const icon = shortcut.type === 'website' ? '🌐' : '💻';
+            iconPreview.innerHTML = icon;
+        }
+    }
+
     showAddModal() {
         console.log('showAddModal called');
+
+        // Reset edit mode
+        this.editingShortcutId = null;
+
         const modal = document.getElementById('add-modal');
         if (!modal) {
             console.error('Add modal not found!');
             return;
         }
-        
+
+        // Set modal to "Add" mode
+        const modalHeader = modal.querySelector('.modal-header h2');
+        const saveBtn = document.getElementById('save-shortcut');
+        if (modalHeader) modalHeader.textContent = 'Add New Shortcut';
+        if (saveBtn) saveBtn.textContent = 'Save';
+
         modal.style.display = 'block';
         console.log('Modal display set to block');
-        
+
         // Reset form
         this.resetAddForm();
-        
+
         // Focus name field
         setTimeout(() => {
             const nameField = document.getElementById('shortcut-name');
@@ -789,14 +901,14 @@ class ShortcutLauncher {
         const nameField = document.getElementById('shortcut-name');
         const pathField = document.getElementById('shortcut-path');
         const typeField = document.getElementById('shortcut-type');
-        
+
         if (nameField) nameField.value = '';
         if (pathField) pathField.value = '';
         if (typeField) {
             typeField.value = 'software';
             this.updatePathField('software');
         }
-        
+
         // Reset icon preview
         this.resetIconPreview();
     }
@@ -805,6 +917,8 @@ class ShortcutLauncher {
         const modal = document.getElementById('add-modal');
         if (modal) {
             modal.style.display = 'none';
+            this.resetAddForm();
+            this.editingShortcutId = null; // Clear edit mode
         }
     }
 
@@ -889,28 +1003,58 @@ class ShortcutLauncher {
         }
 
         // Check if database is available
-        if (!this.dbConnected || !window.dbAPI || !window.dbAPI.addShortcut) {
+        if (!this.dbConnected || !window.dbAPI) {
             this.showMessage('Cannot save shortcut: Database not available. App is running in offline mode.');
             return;
         }
 
-        // Get icon data if available
-        const iconPreview = document.getElementById('icon-preview');
-        const imgElement = iconPreview?.querySelector('img');
-        const iconData = imgElement ? imgElement.src : null;
+        // Get icon data if available (currentIconData stores the file path now)
+        const iconPath = this.currentIconData;
 
         try {
-            // Save to database (will use new default size 250x700)
-            const success = await window.dbAPI.addShortcut(name, path, type, iconData);
-            
+            let success;
+
+            // Check if we're in edit mode
+            if (this.editingShortcutId) {
+                // UPDATE existing shortcut
+                if (!window.dbAPI.updateShortcut) {
+                    this.showMessage('Update function not available');
+                    return;
+                }
+
+                success = await window.dbAPI.updateShortcut(
+                    this.editingShortcutId,
+                    name,
+                    path,
+                    type,
+                    iconPath
+                );
+
+                if (success) {
+                    console.log(`✅ Shortcut '${name}' updated successfully`);
+                }
+            } else {
+                // ADD new shortcut
+                if (!window.dbAPI.addShortcut) {
+                    this.showMessage('Add function not available');
+                    return;
+                }
+
+                success = await window.dbAPI.addShortcut(name, path, type, iconPath);
+
+                if (success) {
+                    console.log(`✅ Shortcut '${name}' saved successfully`);
+                }
+            }
+
+            // Close modal and reload shortcuts if successful
             if (success) {
                 this.hideAddModal();
                 await this.loadShortcuts();
-                console.log(`✅ Shortcut '${name}' saved successfully`);
-                // NO MORE POPUP - Silent success
             } else {
                 this.showMessage('Failed to save shortcut');
             }
+
         } catch (error) {
             console.error('Error saving shortcut:', error);
             this.showMessage('Error saving shortcut: ' + error.message);
@@ -1378,70 +1522,141 @@ class ShortcutLauncher {
 
     async extractIcon() {
         const path = document.getElementById('shortcut-path')?.value.trim();
+        const name = document.getElementById('shortcut-name')?.value.trim();
         const type = document.getElementById('shortcut-type')?.value;
-        
+
         if (!path) {
             this.showMessage('Please enter a path or URL first');
             return;
         }
-        
+
         if (!window.electronAPI) {
             this.showMessage('Cannot extract icon: System API not available');
             return;
         }
-        
+
         const iconPreview = document.getElementById('icon-preview');
         const iconStatus = document.getElementById('icon-status');
         const extractBtn = document.getElementById('extract-icon-btn');
-        
+
         if (!iconPreview || !iconStatus || !extractBtn) {
             console.error('Icon extraction UI elements not found');
             return;
         }
-        
+
         // Show loading state
         extractBtn.disabled = true;
         extractBtn.textContent = 'Extracting...';
-        iconStatus.textContent = 'Extracting icon...';
+        iconStatus.textContent = 'Extracting HIGH-RES icon...';
         iconStatus.className = 'icon-status loading';
-        
+
         try {
-            let iconData = null;
-            
+            let iconPath = null;
+
             if (type === 'website') {
                 if (!this.isValidUrl(path)) {
                     throw new Error('Invalid URL format');
                 }
                 if (window.electronAPI.extractWebsiteIcon) {
-                    iconData = await window.electronAPI.extractWebsiteIcon(path);
+                    // Pass shortcut name for better file naming
+                    iconPath = await window.electronAPI.extractWebsiteIcon(path, name);
                 }
             } else if (type === 'software') {
                 if (window.electronAPI.extractAppIcon) {
-                    iconData = await window.electronAPI.extractAppIcon(path);
+                    // Pass shortcut name for better file naming
+                    iconPath = await window.electronAPI.extractAppIcon(path, name);
                 }
             }
-            
-            if (iconData) {
-                // Show extracted icon
-                iconPreview.innerHTML = `<img src="${iconData}" alt="Extracted icon" />`;
-                iconStatus.textContent = 'Icon extracted successfully!';
-                iconStatus.className = 'icon-status success';
-                this.currentIconData = iconData;
-                console.log('✅ Icon extracted successfully');
+
+            if (iconPath) {
+                // Load the icon from the file path
+                const iconData = await window.electronAPI.loadIcon(iconPath);
+
+                if (iconData) {
+                    // Show extracted icon
+                    iconPreview.innerHTML = `<img src="${iconData}" alt="Extracted icon" class="icon-highres" />`;
+                    iconStatus.textContent = '✅ ULTRA high-res icon extracted (512x512)!';
+                    iconStatus.className = 'icon-status success';
+                    this.currentIconData = iconPath; // Store file path instead of base64
+                    console.log('✅ ULTRA high-res icon extracted successfully:', iconPath);
+                } else {
+                    throw new Error('Failed to load icon from file');
+                }
             } else {
                 throw new Error('Could not extract icon');
             }
-            
+
         } catch (error) {
             console.error('Error extracting icon:', error);
             iconStatus.textContent = `Failed to extract icon: ${error.message}`;
             iconStatus.className = 'icon-status error';
-            
+
             // Reset to default icon
             iconPreview.innerHTML = type === 'website' ? '🌐' : '💻';
         } finally {
             extractBtn.disabled = false;
             extractBtn.textContent = 'Extract Icon';
+        }
+    }
+
+    async browseIconImage() {
+        console.log('🖼️ Browsing for custom icon image...');
+
+        if (!window.electronAPI || !window.electronAPI.browseIconImage) {
+            this.showMessage('Cannot browse for icon: System API not available');
+            return;
+        }
+
+        const iconPreview = document.getElementById('icon-preview');
+        const iconStatus = document.getElementById('icon-status');
+        const browseBtn = document.getElementById('browse-icon-btn');
+
+        if (!iconPreview || !iconStatus || !browseBtn) {
+            console.error('Icon UI elements not found');
+            return;
+        }
+
+        // Show loading state
+        browseBtn.disabled = true;
+        browseBtn.textContent = 'Browsing...';
+        iconStatus.textContent = 'Select an image file...';
+        iconStatus.className = 'icon-status loading';
+
+        try {
+            // Open file browser dialog
+            const iconPath = await window.electronAPI.browseIconImage();
+
+            if (!iconPath) {
+                // User canceled
+                iconStatus.textContent = 'Image selection canceled';
+                iconStatus.className = 'icon-status';
+                return;
+            }
+
+            // Load and display the processed icon
+            const iconData = await window.electronAPI.loadIcon(iconPath);
+
+            if (iconData) {
+                // Show the icon
+                iconPreview.innerHTML = `<img src="${iconData}" alt="Custom icon" class="icon-highres" />`;
+                iconStatus.textContent = '✅ ULTRA high-res custom icon loaded (512x512)!';
+                iconStatus.className = 'icon-status success';
+                this.currentIconData = iconPath; // Store file path
+                console.log('✅ Custom icon loaded successfully:', iconPath);
+            } else {
+                throw new Error('Failed to load processed icon');
+            }
+
+        } catch (error) {
+            console.error('❌ Error browsing for icon:', error);
+            iconStatus.textContent = `Failed to load icon: ${error.message}`;
+            iconStatus.className = 'icon-status error';
+
+            // Reset to default icon
+            iconPreview.innerHTML = '📦';
+        } finally {
+            browseBtn.disabled = false;
+            browseBtn.textContent = 'Browse Image';
         }
     }
 
@@ -1808,6 +2023,186 @@ class ShortcutLauncher {
         // Only show popup alerts for errors and important warnings
         // Success messages are now silent (logged to console only)
         alert(message);
+    }
+
+    // NEW: Taskbar management methods
+    startTaskbar() {
+        console.log('🪟 Starting taskbar...');
+
+        // Initial load
+        this.refreshTaskbar();
+
+        // Refresh every 2 seconds
+        this.taskbarRefreshInterval = setInterval(() => {
+            this.refreshTaskbar();
+        }, 2000);
+
+        console.log('✅ Taskbar started with 2s refresh interval');
+    }
+
+    async refreshTaskbar() {
+        try {
+            if (!window.electronAPI || !window.electronAPI.getOpenWindows) {
+                console.warn('⚠️ getOpenWindows API not available');
+                return;
+            }
+
+            // Get list of open windows
+            const windows = await window.electronAPI.getOpenWindows();
+
+            // Only update if list changed
+            if (JSON.stringify(windows) !== JSON.stringify(this.openWindows)) {
+                this.openWindows = windows;
+                this.renderTaskbar();
+            }
+        } catch (error) {
+            console.error('❌ Error refreshing taskbar:', error);
+        }
+    }
+
+    renderTaskbar() {
+        const taskbarWindows = document.getElementById('taskbar-windows');
+        if (!taskbarWindows) {
+            console.error('❌ Taskbar container not found');
+            return;
+        }
+
+        // Clear existing windows
+        taskbarWindows.innerHTML = '';
+
+        if (this.openWindows.length === 0) {
+            // Show empty state
+            taskbarWindows.innerHTML = '<div class="taskbar-empty">No windows open</div>';
+        } else {
+            // Render each window
+            this.openWindows.forEach(window => {
+                const windowElement = this.createTaskbarWindowElement(window);
+                taskbarWindows.appendChild(windowElement);
+            });
+
+            console.log(`🪟 Rendered ${this.openWindows.length} windows in taskbar`);
+        }
+    }
+
+    createTaskbarWindowElement(window) {
+        const element = document.createElement('div');
+        element.className = 'taskbar-window';
+        element.dataset.processId = window.processId;
+
+        // Get icon based on process name
+        const icon = this.getWindowIcon(window.processName);
+
+        element.innerHTML = `
+            <span class="taskbar-window-icon">${icon}</span>
+            <span class="taskbar-window-title">${this.escapeHtml(window.windowTitle)}</span>
+        `;
+
+        // Add click handler to switch to window
+        element.addEventListener('click', async () => {
+            await this.switchToWindow(window.processId);
+        });
+
+        return element;
+    }
+
+    getWindowIcon(processName) {
+        // Map process names to icons
+        const iconMap = {
+            'chrome': '🌐',
+            'firefox': '🦊',
+            'msedge': '🌐',
+            'explorer': '📁',
+            'notepad': '📝',
+            'code': '💻',
+            'vscode': '💻',
+            'cmd': '⌨️',
+            'powershell': '⚡',
+            'discord': '💬',
+            'slack': '💬',
+            'teams': '👥',
+            'outlook': '📧',
+            'excel': '📊',
+            'word': '📄',
+            'spotify': '🎵',
+            'steam': '🎮'
+        };
+
+        const processLower = processName.toLowerCase();
+        for (const [key, icon] of Object.entries(iconMap)) {
+            if (processLower.includes(key)) {
+                return icon;
+            }
+        }
+
+        // Default icon
+        return '🪟';
+    }
+
+    async switchToWindow(processId) {
+        try {
+            console.log(`🎯 Switching to window with process ID: ${processId}`);
+
+            if (!window.electronAPI || !window.electronAPI.focusWindow) {
+                this.showMessage('Cannot switch windows: API not available');
+                return;
+            }
+
+            const result = await window.electronAPI.focusWindow(processId);
+
+            if (!result.success) {
+                console.warn(`⚠️ Failed to switch to window: ${result.message}`);
+            } else {
+                console.log('✅ Successfully switched to window');
+            }
+        } catch (error) {
+            console.error('❌ Error switching to window:', error);
+        }
+    }
+
+    // NEW: Load high-res icon for shortcut (from file path or fallback to emoji)
+    async loadShortcutIcon(shortcut, iconContainer) {
+        try {
+            // Check if we have a file path (new system)
+            if (shortcut.icon_path && window.electronAPI && window.electronAPI.loadIcon) {
+                // Load icon from file path
+                const iconData = await window.electronAPI.loadIcon(shortcut.icon_path);
+
+                if (iconData) {
+                    // Create high-res image element
+                    const img = document.createElement('img');
+                    img.src = iconData;
+                    img.alt = `${shortcut.name} icon`;
+                    img.className = 'shortcut-icon-img';
+                    iconContainer.innerHTML = '';
+                    iconContainer.appendChild(img);
+                    return;
+                }
+            }
+            // Fallback to base64 (legacy)
+            else if (shortcut.icon_data) {
+                const img = document.createElement('img');
+                img.src = shortcut.icon_data;
+                img.alt = `${shortcut.name} icon`;
+                img.className = 'shortcut-icon-img';
+                iconContainer.innerHTML = '';
+                iconContainer.appendChild(img);
+                return;
+            }
+
+            // Fallback to emoji icons
+            let icon = '';
+            if (shortcut.type === 'website') {
+                icon = '🌐';
+            } else if (shortcut.type === 'software') {
+                icon = shortcut.exists_on_pc ? '💻' : '❌';
+            }
+            iconContainer.textContent = icon;
+
+        } catch (error) {
+            console.error('Error loading shortcut icon:', error);
+            // Fallback to emoji on error
+            iconContainer.textContent = shortcut.type === 'website' ? '🌐' : '💻';
+        }
     }
 
     escapeHtml(text) {

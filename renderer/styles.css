@@ -282,25 +282,47 @@ body {
 }
 
 .shortcut-icon {
-    font-size: 48px;
-    margin-bottom: 10px;
+    font-size: 64px; /* Increased from 48px */
+    margin-bottom: 15px;
     width: 100%;
-    height: 30%;
+    height: 60%; /* INCREASED from 30% to 60% - MUCH BIGGER! */
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    min-height: 80px;
+    min-height: 120px; /* Increased from 80px */
 }
 
-/* UPDATED: Better image scaling for tall containers */
-.shortcut-icon img {
-    max-width: 85%;
-    max-height: 85%;
+/* UPDATED: Better image scaling for tall containers - BIGGER ICONS! */
+.shortcut-icon img,
+.shortcut-icon-img {
+    max-width: 95%; /* Increased from 90% */
+    max-height: 95%; /* Increased from 90% */
     width: auto;
     height: auto;
     object-fit: contain;
     object-position: center;
+    image-rendering: -webkit-optimize-contrast; /* Sharp rendering for high-res icons */
+    image-rendering: crisp-edges;
+    image-rendering: high-quality; /* Best quality rendering */
+    transition: transform 0.2s ease; /* Smooth scaling */
+}
+
+/* Scale icon slightly on shortcut hover */
+.shortcut-item:hover .shortcut-icon img,
+.shortcut-item:hover .shortcut-icon-img {
+    transform: scale(1.05);
+}
+
+/* Icon preview in add modal - show ULTRA high-res at larger size */
+#icon-preview img,
+.icon-highres {
+    width: 180px !important; /* INCREASED from 128px */
+    height: 180px !important; /* INCREASED from 128px */
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: high-quality;
 }
 
 .shortcut-name {
@@ -344,6 +366,36 @@ body {
 }
 
 .shortcut-delete:hover {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+/* NEW: Edit button */
+.shortcut-edit {
+    position: absolute;
+    top: 5px;
+    right: 35px; /* Position to the left of delete button */
+    background-color: #000000;
+    color: #ffffff;
+    border: 1px solid #ffffff;
+    width: 26px;
+    height: 26px;
+    border-radius: 0;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 11;
+    transition: all 0.2s ease;
+}
+
+.shortcut-item:hover .shortcut-edit {
+    display: flex;
+}
+
+.shortcut-edit:hover {
     background-color: #ffffff;
     color: #000000;
 }
@@ -545,7 +597,15 @@ body {
     object-fit: contain;
 }
 
-.extract-icon-btn {
+/* Icon action buttons container */
+.icon-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.extract-icon-btn,
+.browse-icon-btn {
     background-color: #ffffff;
     color: #000000;
     border: 2px solid #ffffff;
@@ -557,12 +617,14 @@ body {
     transition: all 0.2s ease;
 }
 
-.extract-icon-btn:hover {
+.extract-icon-btn:hover,
+.browse-icon-btn:hover {
     background-color: #000000;
     color: #ffffff;
 }
 
-.extract-icon-btn:disabled {
+.extract-icon-btn:disabled,
+.browse-icon-btn:disabled {
     background-color: #333333;
     color: #666666;
     border-color: #666666;
@@ -870,6 +932,7 @@ body {
 .modal-close,
 .browse-btn,
 .extract-icon-btn,
+.browse-icon-btn,
 .save-btn,
 .cancel-btn {
     -webkit-user-select: none;
@@ -884,6 +947,7 @@ body {
 .modal-close,
 .browse-btn,
 .extract-icon-btn,
+.browse-icon-btn,
 .save-btn,
 .cancel-btn {
     cursor: pointer;
@@ -907,6 +971,7 @@ body {
 .form-group select:focus,
 .browse-btn:focus,
 .extract-icon-btn:focus,
+.browse-icon-btn:focus,
 .save-btn:focus,
 .cancel-btn:focus {
     outline: 2px solid #ffffff;
@@ -920,9 +985,10 @@ body {
 
 @container (min-width: 300px) {
     .shortcut-icon {
-        height: 35%;
+        height: 60%; /* BIGGER! */
+        min-height: 140px;
     }
-    
+
     .shortcut-name {
         font-size: 18px;
     }
@@ -930,35 +996,38 @@ body {
 
 @container (min-width: 400px) {
     .shortcut-icon {
-        height: 40%;
+        height: 65%; /* EVEN BIGGER! */
+        min-height: 180px;
     }
-    
+
     .shortcut-name {
         font-size: 20px;
     }
 }
 
-/* UPDATED: Better proportions for tall shortcuts */
+/* UPDATED: Better proportions for tall shortcuts - BIGGER ICONS! */
 @container (min-height: 600px) {
     .shortcut-icon {
-        height: 25%;
-        font-size: 64px;
+        height: 50%; /* INCREASED from 25% - much bigger! */
+        min-height: 250px;
+        font-size: 80px; /* Increased from 64px */
     }
-    
+
     .shortcut-name {
-        font-size: 18px;
+        font-size: 20px; /* Increased from 18px */
         padding: 15px;
     }
 }
 
 @container (min-height: 800px) {
     .shortcut-icon {
-        height: 20%;
-        font-size: 80px;
+        height: 45%; /* INCREASED from 20% - HUGE icons for tall shortcuts! */
+        min-height: 320px;
+        font-size: 100px; /* Increased from 80px */
     }
-    
+
     .shortcut-name {
-        font-size: 22px;
+        font-size: 24px; /* Increased from 22px */
         padding: 20px;
     }
 }
@@ -1212,4 +1281,95 @@ body {
 .users-list::-webkit-scrollbar-thumb:hover,
 .screenshare-modal-content::-webkit-scrollbar-thumb:hover {
     background: #666;
+}
+
+/* Windows Taskbar - Bottom Center */
+.windows-taskbar {
+    display: block; /* VISIBLE - showing open windows */
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.95);
+    border: 2px solid #ffffff;
+    border-bottom: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding: 8px 16px;
+    z-index: 9999;
+    max-width: 90%;
+    box-shadow: 0 -4px 12px rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.taskbar-windows {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+}
+
+.taskbar-window {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #1a1a1a;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    max-width: 200px;
+    min-width: 120px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.taskbar-window:hover {
+    background: #333333;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(255, 255, 255, 0.2);
+}
+
+.taskbar-window:active {
+    transform: translateY(0);
+}
+
+.taskbar-window-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.taskbar-window-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.taskbar-empty {
+    color: #888888;
+    font-size: 13px;
+    font-style: italic;
+    padding: 8px 16px;
+}
+
+/* Taskbar animations */
+.taskbar-window {
+    animation: taskbarSlideUp 0.3s ease;
+}
+
+@keyframes taskbarSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

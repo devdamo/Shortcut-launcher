@@ -11,18 +11,25 @@
     "clean": "rm -rf node_modules package-lock.json && npm install",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["electron", "shortcuts", "launcher", "fullscreen", "black-white"],
+  "keywords": [
+    "electron",
+    "shortcuts",
+    "launcher",
+    "fullscreen",
+    "black-white"
+  ],
   "author": "Shortcut Launcher Team",
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^20.10.0",
     "electron": "^28.0.0",
-    "electron-builder": "^24.6.4",
-    "@types/node": "^20.10.0"
+    "electron-builder": "^24.6.4"
   },
   "dependencies": {
-    "mysql2": "^3.6.5",
     "electron-store": "^8.1.0",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "mysql2": "^3.6.5",
+    "peerjs": "^1.5.2"
   },
   "optionalDependencies": {
     "sharp": "^0.33.0"

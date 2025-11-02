@@ -26,25 +26,37 @@ try {
     // File operations
     checkSoftwareExists: (path) => ipcRenderer.invoke('check-software-exists', path),
     browseFile: () => ipcRenderer.invoke('browse-file'),
-    
+
     // NEW: Background image browsing
     browseBackgroundImage: () => ipcRenderer.invoke('browse-background-image'),
-    
+
+    // NEW: Icon image browsing
+    browseIconImage: () => ipcRenderer.invoke('browse-icon-image'),
+
     // Shortcut operations
     openShortcut: (path, isUrl) => ipcRenderer.invoke('open-shortcut', path, isUrl),
     
-    // Icon extraction
-    extractWebsiteIcon: (url) => ipcRenderer.invoke('extract-website-icon', url),
-    extractAppIcon: (path) => ipcRenderer.invoke('extract-app-icon', path),
+    // Icon extraction (now returns file path, not base64)
+    extractWebsiteIcon: (url, shortcutName) => ipcRenderer.invoke('extract-website-icon', url, shortcutName),
+    extractAppIcon: (path, shortcutName) => ipcRenderer.invoke('extract-app-icon', path, shortcutName),
+
+    // Load icon from file path
+    loadIcon: (iconPath) => ipcRenderer.invoke('load-icon', iconPath),
     
     // NEW: RustDesk installation
     installRustDesk: () => ipcRenderer.invoke('install-rustdesk'),
     
     // NEW: Window mode control
     setDesktopMode: (enabled) => ipcRenderer.invoke('set-desktop-mode', enabled),
-    
+
     // NEW: Screen capture for screen sharing (uses IPC to main process)
-    getDesktopSources: () => ipcRenderer.invoke('get-desktop-sources')
+    getDesktopSources: () => ipcRenderer.invoke('get-desktop-sources'),
+
+    // NEW: Taskbar - get open windows
+    getOpenWindows: () => ipcRenderer.invoke('get-open-windows'),
+
+    // NEW: Taskbar - focus/switch to window
+    focusWindow: (processId) => ipcRenderer.invoke('focus-window', processId)
   });
   
   console.log('✅ electronAPI exposed successfully');
@@ -57,9 +69,10 @@ try {
     },
     getShortcuts: () => ipcRenderer.invoke('db-get-shortcuts'),
     addShortcut: (name, path, type, iconData) => ipcRenderer.invoke('db-add-shortcut', name, path, type, iconData),
+    updateShortcut: (id, name, path, type, iconPath) => ipcRenderer.invoke('db-update-shortcut', id, name, path, type, iconPath),
     deleteShortcut: (id) => ipcRenderer.invoke('db-delete-shortcut', id),
     updateShortcutExistence: (id, exists) => ipcRenderer.invoke('db-update-shortcut-existence', id, exists),
-    
+
     // NEW: Shortcut sizing
     updateShortcutSize: (id, width, height) => ipcRenderer.invoke('db-update-shortcut-size', id, width, height),
     

@@ -4,6 +4,7 @@ const fs = require('fs-extra');
 const os = require('os');
 const mysql = require('mysql2/promise');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 
 // Pure Electron wallpaper mode (no native dependencies required!)
 console.log('🎮 Pure Electron wallpaper mode loaded - no compilation needed!');
@@ -15,6 +16,7 @@ let dbConnection = null;
 let pcInfo = null;
 let isDbConnected = false;
 let isWallpaperMode = false;
+let iconsDir = null; // Directory for storing icons locally
 
 // Pure Electron wallpaper mode functions (no native compilation required!)
 function enableWallpaperMode() {
@@ -101,19 +103,91 @@ try {
   console.log('Sharp not available, using fallback image processing');
 }
 
-function createWindow() {
-  // Get screen dimensions excluding taskbar
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  const { x, y } = primaryDisplay.workArea;
+// Initialize icons directory
+async function initializeIconsDirectory() {
+  try {
+    // Use app's userData directory for persistent storage
+    const userDataPath = app.getPath('userData');
+    iconsDir = path.join(userDataPath, 'icons');
 
-  // Create the browser window with secure settings
+    // Create icons directory if it doesn't exist
+    await fs.ensureDir(iconsDir);
+    console.log(`✅ Icons directory initialized: ${iconsDir}`);
+
+    return iconsDir;
+  } catch (error) {
+    console.error('❌ Error initializing icons directory:', error);
+    return null;
+  }
+}
+
+// Save icon locally and return the file path
+async function saveIconLocally(iconBuffer, shortcutName) {
+  try {
+    if (!iconsDir) {
+      await initializeIconsDirectory();
+    }
+
+    // Generate unique filename using hash + name
+    const hash = crypto.createHash('md5').update(iconBuffer).digest('hex').substring(0, 8);
+    const sanitizedName = shortcutName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const filename = `${sanitizedName}_${hash}.png`;
+    const filePath = path.join(iconsDir, filename);
+
+    // Save the icon as PNG
+    await fs.writeFile(filePath, iconBuffer);
+    console.log(`✅ Icon saved locally: ${filename}`);
+
+    return filePath;
+  } catch (error) {
+    console.error('❌ Error saving icon locally:', error);
+    return null;
+  }
+}
+
+// Load icon from local path
+async function loadIconLocally(iconPath) {
+  try {
+    if (!iconPath || !await fs.pathExists(iconPath)) {
+      console.warn('⚠️ Icon file not found:', iconPath);
+      return null;
+    }
+
+    const buffer = await fs.readFile(iconPath);
+    return `data:image/png;base64,${buffer.toString('base64')}`;
+  } catch (error) {
+    console.error('❌ Error loading icon locally:', error);
+    return null;
+  }
+}
+
+// Delete old icon file
+async function deleteIconFile(iconPath) {
+  try {
+    if (iconPath && await fs.pathExists(iconPath)) {
+      await fs.unlink(iconPath);
+      console.log(`✅ Deleted old icon: ${iconPath}`);
+    }
+  } catch (error) {
+    console.error('❌ Error deleting icon file:', error);
+  }
+}
+
+function createWindow() {
+  // Get FULL screen dimensions (not just work area - we want fullscreen!)
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.bounds; // Changed from workAreaSize to bounds for true fullscreen
+  const { x, y } = primaryDisplay.bounds;
+
+  // Create the browser window with KIOSK MODE settings
   mainWindow = new BrowserWindow({
-    x: x,
-    y: y,
+    x: 0, // Always start at 0,0 for fullscreen
+    y: 0,
     width: width,
     height: height,
     frame: false,
+    fullscreen: true,               // KIOSK MODE: Enable fullscreen
+    kiosk: true,                    // KIOSK MODE: Enable kiosk mode (harder to exit)
     webPreferences: {
       nodeIntegration: false,        // SECURE: Disable node integration
       contextIsolation: true,        // SECURE: Enable context isolation
@@ -125,12 +199,12 @@ function createWindow() {
     backgroundColor: '#000000',
     show: false,
     resizable: false,               // Prevent resizing
-    minimizable: true,              // Allow minimize to see desktop
-    maximizable: false,             // Disable maximize since we're using workArea
-    closable: true,                 // Allow closing
-    alwaysOnTop: false,             // Don't force always on top
+    minimizable: false,             // KIOSK MODE: Disable minimize
+    maximizable: false,             // Disable maximize
+    closable: true,                 // Allow closing (but only via admin)
+    alwaysOnTop: true,              // KIOSK MODE: Always on top
     skipTaskbar: false,             // Show in taskbar
-    type: 'desktop'                 // NEW: Set as desktop-type window (acts like wallpaper)
+    autoHideMenuBar: true           // Hide menu bar
   });
 
   // Load the HTML file
@@ -202,7 +276,10 @@ function createWindow() {
 }
 
 // App event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Initialize icons directory first
+  await initializeIconsDirectory();
+
   createWindow();
 });
 
@@ -314,7 +391,7 @@ async function initializePCTables() {
         name VARCHAR(255) NOT NULL,
         path TEXT NOT NULL,
         type ENUM('software', 'website') NOT NULL,
-        icon_data LONGTEXT,
+        icon_path TEXT,
         exists_on_pc BOOLEAN DEFAULT TRUE,
         position_x INT DEFAULT 0,
         position_y INT DEFAULT 0,
@@ -324,6 +401,41 @@ async function initializePCTables() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
+
+    // MIGRATION: Add icon_path column if it doesn't exist (for existing databases)
+    try {
+      // Check if icon_path column exists
+      const [columns] = await dbConnection.execute(`
+        SHOW COLUMNS FROM ${shortcutsTableName} LIKE 'icon_path'
+      `);
+
+      if (columns.length === 0) {
+        console.log('');
+        console.log('═══════════════════════════════════════════════');
+        console.log('📦 DATABASE MIGRATION REQUIRED');
+        console.log('═══════════════════════════════════════════════');
+        console.log('Adding icon_path column to shortcuts table...');
+
+        // Add icon_path column
+        await dbConnection.execute(`
+          ALTER TABLE ${shortcutsTableName}
+          ADD COLUMN icon_path TEXT AFTER type
+        `);
+
+        console.log('✅ Migration complete: icon_path column added');
+        console.log('✅ High-resolution icons are now supported!');
+        console.log('');
+        console.log('📝 Note: Existing shortcuts will use emoji icons.');
+        console.log('📝 Edit shortcuts and extract icons to get high-res versions.');
+        console.log('═══════════════════════════════════════════════');
+        console.log('');
+      } else {
+        console.log('✅ Database schema up to date (icon_path column exists)');
+      }
+    } catch (migrationError) {
+      console.error('⚠️ Migration warning:', migrationError.message);
+      // Continue anyway - table might be fine
+    }
 
     // Create settings table for this PC - NEW for background settings
     const settingsTableName = `settings_${sanitizeTableName(pcInfo.hostname)}`;
@@ -446,25 +558,52 @@ async function downloadFile(url, outputPath, options = {}) {
   });
 }
 
-// Helper function to resize image
-async function resizeImage(buffer) {
+// Helper function to resize image to ULTRA HIGH RESOLUTION with AI upscaling
+async function resizeImage(buffer, size = 512) { // INCREASED from 256 to 512!
   if (sharpAvailable) {
     try {
       const sharp = require('sharp');
+
+      // Get original image metadata
+      const metadata = await sharp(buffer).metadata();
+      const originalWidth = metadata.width;
+      const originalHeight = metadata.height;
+
+      console.log(`📐 Original icon size: ${originalWidth}x${originalHeight}`);
+
+      // If image is very small (< 64px), use Lanczos3 for better upscaling
+      const kernel = (originalWidth < 64 || originalHeight < 64) ? sharp.kernel.lanczos3 : sharp.kernel.lanczos2;
+
+      console.log(`🎨 Resizing to ${size}x${size} with ${kernel === sharp.kernel.lanczos3 ? 'Lanczos3 (AI upscaling)' : 'Lanczos2'}`);
+
+      // Create ULTRA high-res icon (512x512) with best quality
       return await sharp(buffer)
-        .resize(64, 64, { 
-          fit: 'contain', 
-          background: { r: 0, g: 0, b: 0, alpha: 0 } 
+        .resize(size, size, {
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+          kernel: kernel, // Use Lanczos3 for small images (best quality upscaling)
+          withoutEnlargement: false // Allow upscaling
         })
-        .png()
+        .png({
+          compressionLevel: 6, // Balance between quality and file size
+          adaptiveFiltering: true, // Better quality
+          palette: false // True color, no palette
+        })
         .toBuffer();
     } catch (error) {
-      console.log('Sharp resize failed, using original image');
+      console.log('Sharp resize failed, using fallback:', error.message);
     }
   }
-  
-  // Fallback: return original buffer
-  return buffer;
+
+  // Fallback: Use Electron's nativeImage for resizing
+  try {
+    const image = nativeImage.createFromBuffer(buffer);
+    const resized = image.resize({ width: size, height: size, quality: 'best' });
+    return resized.toPNG();
+  } catch (error) {
+    console.log('Fallback resize failed, returning original');
+    return buffer;
+  }
 }
 
 // FIXED: Better close handlers with immediate flag setting
@@ -571,8 +710,56 @@ ipcMain.handle('browse-background-image', async () => {
       { name: 'All Files', extensions: ['*'] }
     ]
   });
-  
+
   return result.canceled ? null : result.filePaths[0];
+});
+
+// NEW: Browse for custom icon image
+ipcMain.handle('browse-icon-image', async () => {
+  console.log('🖼️ Opening icon image browser...');
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'ico'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    title: 'Select Icon Image'
+  });
+
+  if (result.canceled || !result.filePaths[0]) {
+    console.log('❌ Icon image selection canceled');
+    return null;
+  }
+
+  const selectedPath = result.filePaths[0];
+  console.log('📁 Selected icon image:', selectedPath);
+
+  try {
+    // Read the selected image file
+    const imageBuffer = await fs.readFile(selectedPath);
+    console.log('📥 Image loaded, size:', imageBuffer.length, 'bytes');
+
+    // Process the image (resize to ULTRA high-res 512x512 with AI upscaling)
+    const processedBuffer = await resizeImage(imageBuffer, 512);
+
+    if (!processedBuffer) {
+      throw new Error('Failed to process image');
+    }
+
+    console.log('✅ Image processed to ULTRA high-res (512x512)');
+
+    // Save to icons directory
+    const fileName = path.basename(selectedPath, path.extname(selectedPath));
+    const iconPath = await saveIconLocally(processedBuffer, fileName);
+
+    console.log('✅ Icon saved:', iconPath);
+    return iconPath;
+
+  } catch (error) {
+    console.error('❌ Error processing icon image:', error);
+    throw error;
+  }
 });
 
 // NEW: Install RustDesk handler
@@ -684,42 +871,55 @@ ipcMain.handle('open-shortcut', async (event, shortcutPath, isUrl = false) => {
   }
 });
 
-// Icon extraction IPC handlers
-ipcMain.handle('extract-website-icon', async (event, url) => {
+// Icon extraction IPC handlers - NOW SAVES LOCALLY IN ULTRA HIGH RES
+ipcMain.handle('extract-website-icon', async (event, url, shortcutName) => {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.origin;
-    
+
+    // Try to get ULTRA high-res favicon (512x512 is the goal!)
     const faviconSources = [
-      `${domain}/favicon.ico`,
-      `${domain}/favicon.png`,
+      `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=512`, // ULTRA High-res Google favicon
+      `${domain}/apple-touch-icon-precomposed.png`, // Usually 180x180
       `${domain}/apple-touch-icon.png`,
-      `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=64`,
-      `https://favicon.yandex.net/favicon/${urlObj.hostname}`,
-      `https://icons.duckduckgo.com/ip3/${urlObj.hostname}.ico`
+      `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=256`, // Fallback to 256
+      `https://icons.duckduckgo.com/ip3/${urlObj.hostname}.ico`,
+      `${domain}/favicon-194x194.png`,
+      `${domain}/favicon-96x96.png`,
+      `${domain}/favicon.png`,
+      `${domain}/favicon.ico`,
+      `https://favicon.yandex.net/favicon/${urlObj.hostname}`
     ];
 
     for (const faviconUrl of faviconSources) {
       try {
-        console.log(`Trying to fetch favicon from: ${faviconUrl}`);
-        
+        console.log(`Trying to fetch ULTRA HIGH-RES favicon from: ${faviconUrl}`);
+
         const buffer = await fetchData(faviconUrl, {
-          timeout: 3000,
+          timeout: 5000,
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
         });
-        
+
         if (buffer && buffer.length > 0) {
-          const resizedBuffer = await resizeImage(buffer);
-          return `data:image/png;base64,${resizedBuffer.toString('base64')}`;
+          // Resize to ULTRA high-res 512x512 with AI upscaling
+          const resizedBuffer = await resizeImage(buffer, 512);
+
+          // Save locally and return file path
+          const iconPath = await saveIconLocally(resizedBuffer, shortcutName || urlObj.hostname);
+
+          if (iconPath) {
+            console.log(`✅ ULTRA high-res website icon saved (512x512): ${iconPath}`);
+            return iconPath; // Return file path instead of base64
+          }
         }
       } catch (error) {
         console.log(`Failed to fetch favicon from ${faviconUrl}:`, error.message);
         continue;
       }
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error extracting website icon:', error);
@@ -727,7 +927,7 @@ ipcMain.handle('extract-website-icon', async (event, url) => {
   }
 });
 
-ipcMain.handle('extract-app-icon', async (event, appPath) => {
+ipcMain.handle('extract-app-icon', async (event, appPath, shortcutName) => {
   try {
     let targetPath = appPath;
     if (path.extname(appPath).toLowerCase() === '.lnk') {
@@ -740,15 +940,36 @@ ipcMain.handle('extract-app-icon', async (event, appPath) => {
     }
 
     try {
+      // Get JUMBO size icon from Windows
       const icon = await app.getFileIcon(targetPath, { size: 'large' });
-      const iconBuffer = icon.toPNG();
-      
-      const resizedBuffer = await resizeImage(iconBuffer);
-      return `data:image/png;base64,${resizedBuffer.toString('base64')}`;
+      let iconBuffer = icon.toPNG();
+
+      // Try to get even higher resolution if possible
+      const image = nativeImage.createFromPath(targetPath);
+      if (!image.isEmpty()) {
+        const size = image.getSize();
+        console.log(`📐 Original app icon size: ${size.width}x${size.height}`);
+
+        // If we got a high-res icon, use it
+        if (size.width >= 128) {
+          iconBuffer = image.toPNG();
+        }
+      }
+
+      // Resize to ULTRA high-res 512x512 with AI upscaling
+      const resizedBuffer = await resizeImage(iconBuffer, 512);
+
+      // Save locally and return file path
+      const iconPath = await saveIconLocally(resizedBuffer, shortcutName || path.basename(targetPath, path.extname(targetPath)));
+
+      if (iconPath) {
+        console.log(`✅ ULTRA high-res app icon saved (512x512): ${iconPath}`);
+        return iconPath; // Return file path instead of base64
+      }
     } catch (error) {
       console.log('Could not extract app icon:', error.message);
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error extracting app icon:', error);
@@ -798,23 +1019,23 @@ ipcMain.handle('db-get-shortcuts', async () => {
   }
 });
 
-ipcMain.handle('db-add-shortcut', async (event, name, path, type, iconData = null) => {
+ipcMain.handle('db-add-shortcut', async (event, name, path, type, iconPath = null) => {
   try {
     if (!isDbConnected || !pcInfo) return false;
 
     const tableName = `shortcuts_${sanitizeTableName(pcInfo.hostname)}`;
-    
+
     let existsOnPc = true;
     if (type === 'software') {
       existsOnPc = await fs.pathExists(path);
     }
 
     await dbConnection.execute(`
-      INSERT INTO ${tableName} (name, path, type, icon_data, exists_on_pc, width, height) 
+      INSERT INTO ${tableName} (name, path, type, icon_path, exists_on_pc, width, height)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [name, path, type, iconData, existsOnPc, 250, 700]); // NEW: Default size 250x700
+    `, [name, path, type, iconPath, existsOnPc, 250, 700]); // NEW: Default size 250x700
 
-    console.log(`✅ Added shortcut: ${name}`);
+    console.log(`✅ Added shortcut: ${name} with icon: ${iconPath}`);
     return true;
   } catch (error) {
     console.error('❌ Error adding shortcut:', error);
@@ -840,11 +1061,63 @@ ipcMain.handle('db-update-shortcut-size', async (event, id, width, height) => {
   }
 });
 
+// NEW: Update shortcut details (name, path, type, icon)
+ipcMain.handle('db-update-shortcut', async (event, id, name, path, type, newIconPath = null) => {
+  try {
+    if (!isDbConnected || !pcInfo) return false;
+
+    const tableName = `shortcuts_${sanitizeTableName(pcInfo.hostname)}`;
+
+    // Get current shortcut to check if icon changed
+    const [rows] = await dbConnection.execute(`
+      SELECT icon_path FROM ${tableName} WHERE id = ?
+    `, [id]);
+
+    const oldIconPath = rows.length > 0 ? rows[0].icon_path : null;
+
+    // Check if software path exists
+    let existsOnPc = true;
+    if (type === 'software') {
+      existsOnPc = await fs.pathExists(path);
+    }
+
+    // Update shortcut details
+    await dbConnection.execute(`
+      UPDATE ${tableName}
+      SET name = ?, path = ?, type = ?, icon_path = ?, exists_on_pc = ?
+      WHERE id = ?
+    `, [name, path, type, newIconPath, existsOnPc, id]);
+
+    // Delete old icon file if icon was changed and it exists
+    if (newIconPath && oldIconPath && newIconPath !== oldIconPath) {
+      await deleteIconFile(oldIconPath);
+    }
+
+    console.log(`✅ Updated shortcut: ${id} -> ${name}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error updating shortcut:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('db-delete-shortcut', async (event, id) => {
   try {
     if (!isDbConnected || !pcInfo) return false;
 
     const tableName = `shortcuts_${sanitizeTableName(pcInfo.hostname)}`;
+
+    // Get the shortcut to find the icon path
+    const [rows] = await dbConnection.execute(`
+      SELECT icon_path FROM ${tableName} WHERE id = ?
+    `, [id]);
+
+    // Delete the icon file if it exists
+    if (rows.length > 0 && rows[0].icon_path) {
+      await deleteIconFile(rows[0].icon_path);
+    }
+
+    // Delete the shortcut from database
     await dbConnection.execute(`
       DELETE FROM ${tableName} WHERE id = ?
     `, [id]);
@@ -870,6 +1143,16 @@ ipcMain.handle('db-update-shortcut-existence', async (event, id, exists) => {
   } catch (error) {
     console.error('Error updating shortcut existence:', error);
     return false;
+  }
+});
+
+// NEW: Load icon from local file path
+ipcMain.handle('load-icon', async (event, iconPath) => {
+  try {
+    return await loadIconLocally(iconPath);
+  } catch (error) {
+    console.error('Error loading icon:', error);
+    return null;
   }
 });
 
@@ -989,20 +1272,20 @@ ipcMain.handle('set-desktop-mode', async (event, enabled) => {
 ipcMain.handle('get-desktop-sources', async () => {
   try {
     console.log('📺 Getting desktop capture sources...');
-    const sources = await desktopCapturer.getSources({ 
+    const sources = await desktopCapturer.getSources({
       types: ['screen', 'window'],
       thumbnailSize: { width: 0, height: 0 } // Don't generate thumbnails - too large for IPC
     });
-    
+
     console.log(`✅ Found ${sources.length} sources`);
-    
+
     // Filter out non-capturable sources and return only essential data
     const capturableSources = sources
       .filter(source => {
         // Filter out non-capturable windows
         const name = source.name.toLowerCase();
         // Skip Windows system dialogs and protected windows
-        if (name.includes('task switching') || 
+        if (name.includes('task switching') ||
             name.includes('program manager') ||
             name.includes('settings') ||
             source.id.includes('window:0:0')) {
@@ -1015,12 +1298,206 @@ ipcMain.handle('get-desktop-sources', async () => {
         name: source.name,
         // Don't send thumbnail - too large for IPC
       }));
-    
+
     console.log(`✅ Returning ${capturableSources.length} capturable sources`);
     return capturableSources;
   } catch (error) {
     console.error('❌ Error getting desktop sources:', error);
     throw error;
+  }
+});
+
+// NEW: Get open windows for taskbar
+ipcMain.handle('get-open-windows', async () => {
+  try {
+    console.log('🪟 Getting open windows...');
+
+    if (process.platform !== 'win32') {
+      console.log('⚠️ Window listing only supported on Windows');
+      return [];
+    }
+
+    // Use PowerShell to get visible windows
+    const powershellScript = `
+      Add-Type @"
+      using System;
+      using System.Runtime.InteropServices;
+      using System.Text;
+      public class Win32 {
+          [DllImport("user32.dll")]
+          public static extern bool IsWindowVisible(IntPtr hWnd);
+
+          [DllImport("user32.dll")]
+          public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+
+          [DllImport("user32.dll", SetLastError=true)]
+          public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+      }
+"@
+
+      Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | ForEach-Object {
+          $processId = $_.Id
+          $processName = $_.ProcessName
+          $windowTitle = $_.MainWindowTitle
+
+          # Output as JSON
+          @{
+              processId = $processId
+              processName = $processName
+              windowTitle = $windowTitle
+          } | ConvertTo-Json -Compress
+      }
+    `;
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        powershellScript
+      ], {
+        stdio: 'pipe',
+        windowsHide: true
+      });
+
+      let output = '';
+      let errorOutput = '';
+
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          console.error('PowerShell error:', errorOutput);
+          resolve([]);
+          return;
+        }
+
+        try {
+          // Parse the JSON lines
+          const lines = output.trim().split('\n');
+          const windows = [];
+
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const windowInfo = JSON.parse(line);
+                // Filter out our own window
+                if (windowInfo.windowTitle &&
+                    !windowInfo.windowTitle.includes('Shortcut Launcher') &&
+                    windowInfo.processName !== 'electron') {
+                  windows.push(windowInfo);
+                }
+              } catch (parseError) {
+                console.log('Failed to parse line:', line);
+              }
+            }
+          }
+
+          console.log(`✅ Found ${windows.length} open windows`);
+          resolve(windows);
+        } catch (error) {
+          console.error('Error parsing window list:', error);
+          resolve([]);
+        }
+      });
+
+      child.on('error', (error) => {
+        console.error('Error running PowerShell:', error);
+        resolve([]);
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error getting open windows:', error);
+    return [];
+  }
+});
+
+// NEW: Focus/switch to a window by process ID
+ipcMain.handle('focus-window', async (event, processId) => {
+  try {
+    console.log(`🎯 Focusing window with process ID: ${processId}`);
+
+    if (process.platform !== 'win32') {
+      return { success: false, message: 'Only supported on Windows' };
+    }
+
+    // Use PowerShell to bring window to foreground
+    const powershellScript = `
+      Add-Type @"
+      using System;
+      using System.Runtime.InteropServices;
+      public class Win32 {
+          [DllImport("user32.dll")]
+          public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+          [DllImport("user32.dll")]
+          public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+          [DllImport("user32.dll")]
+          public static extern bool IsIconic(IntPtr hWnd);
+      }
+"@
+
+      $process = Get-Process -Id ${processId} -ErrorAction SilentlyContinue
+      if ($process) {
+          $hwnd = $process.MainWindowHandle
+          if ($hwnd -ne 0) {
+              # If minimized, restore it
+              if ([Win32]::IsIconic($hwnd)) {
+                  [Win32]::ShowWindow($hwnd, 9) # SW_RESTORE = 9
+              }
+              # Bring to foreground
+              [Win32]::SetForegroundWindow($hwnd)
+              Write-Output "success"
+          } else {
+              Write-Output "no_window"
+          }
+      } else {
+          Write-Output "not_found"
+      }
+    `;
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        powershellScript
+      ], {
+        stdio: 'pipe',
+        windowsHide: true
+      });
+
+      let output = '';
+
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.on('close', (code) => {
+        const result = output.trim();
+        if (result === 'success') {
+          resolve({ success: true, message: 'Window focused' });
+        } else if (result === 'no_window') {
+          resolve({ success: false, message: 'Process has no window' });
+        } else {
+          resolve({ success: false, message: 'Process not found' });
+        }
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error focusing window:', error);
+    return { success: false, message: error.message };
   }
 });
 
