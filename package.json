@@ -3,10 +3,20 @@
   "version": "1.0.0",
   "description": "Fullscreen shortcut launcher with software detection - Black & White Theme",
   "main": "src/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/shortcut-launcher.git"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mwl",
+    "publish": "electron-builder --publish always",
+    "publish:win": "electron-builder --win --publish always",
     "postinstall": "electron-builder install-app-deps",
     "clean": "rm -rf node_modules package-lock.json && npm install",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -44,19 +54,50 @@
       "src/**/*",
       "renderer/**/*",
       "preload.js",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "!node_modules/**/{CHANGELOG.md,README.md,readme.md,changelog.md}",
+      "!node_modules/**/test",
+      "!node_modules/**/tests"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YOUR_USERNAME",
+        "repo": "shortcut-launcher"
+      }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Shortcut Launcher Team",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Shortcut Launcher"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Utility"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns"
+      "target": ["dmg", "zip"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.utilities"
     }
   },
   "engines": {

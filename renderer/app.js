@@ -45,12 +45,13 @@ class ShortcutLauncher {
                     this.dbConnected = true;
                     console.log('✅ Database connected successfully');
                     
-                    // Step 4: Load shortcuts, background, and window settings
-                    console.log('Step 4: Loading shortcuts, background, and window settings...');
+                    // Step 4: Load shortcuts and background settings
+                    console.log('Step 4: Loading shortcuts and background settings...');
                     await this.loadShortcuts();
                     await this.loadBackgroundSettings();
-                    await this.loadAndApplyWindowSettings();
-                    console.log('✅ Content loaded');
+                    // REMOVED: Don't auto-apply desktop mode on startup - always start in fullscreen mode
+                    // Users can manually toggle desktop mode via Admin panel if needed
+                    console.log('✅ Content loaded (starting in FULLSCREEN MODE - apps can show on top)');
                 } else {
                     console.warn('⚠️ Database connection failed, continuing in offline mode...');
                     this.dbConnected = false;
@@ -241,9 +242,9 @@ class ShortcutLauncher {
 
         // CRITICAL: Keyboard shortcuts for emergency controls + NAVIGATION
         document.addEventListener('keydown', async (e) => {
-            // Disable F11 (fullscreen toggle) - we're already in kiosk mode
+            // Disable F11 (fullscreen toggle) - we're already in fullscreen mode
             if (e.key === 'F11') {
-                console.log('🚫 F11 blocked - Fullscreen toggle disabled in kiosk mode');
+                console.log('🚫 F11 blocked - Fullscreen toggle disabled');
                 e.preventDefault();
                 return;
             }

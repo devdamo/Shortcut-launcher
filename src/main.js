@@ -24,15 +24,18 @@ function enableWallpaperMode() {
     console.log('⚠️ Main window not available');
     return false;
   }
-  
+
   try {
+    // FIXED: Exit fullscreen mode first before enabling wallpaper mode
+    mainWindow.setFullScreen(false);
+
     // Use Electron's built-in methods for wallpaper-like behavior
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setSkipTaskbar(false);
-    
+
     // Move to background and make it behave like wallpaper
     mainWindow.blur();
-    
+
     // Set window level to desktop/background
     if (process.platform === 'darwin') {
       // macOS: Set to desktop level
@@ -41,12 +44,12 @@ function enableWallpaperMode() {
       // Windows/Linux: Use minimize/restore trick to send to back
       const originalBounds = mainWindow.getBounds();
       mainWindow.minimize();
-      
+
       setTimeout(() => {
         mainWindow.restore();
         mainWindow.setBounds(originalBounds);
         mainWindow.blur();
-        
+
         // Continuously keep window in background
         const keepInBackground = () => {
           if (isWallpaperMode && mainWindow && !mainWindow.isDestroyed()) {
@@ -55,14 +58,14 @@ function enableWallpaperMode() {
           }
         };
         keepInBackground();
-        
+
       }, 200);
     }
-    
-    console.log('✅ Wallpaper mode enabled - using pure Electron methods');
+
+    console.log('✅ Wallpaper mode enabled - fullscreen disabled, window in background');
     isWallpaperMode = true;
     return true;
-    
+
   } catch (error) {
     console.error('❌ Error enabling wallpaper mode:', error);
     return false;
@@ -73,18 +76,14 @@ function disableWallpaperMode() {
   if (!mainWindow) {
     return false;
   }
-  
+
   try {
-    // Restore normal window behavior
-    if (process.platform === 'darwin') {
-      mainWindow.setLevel('normal');
-    }
-    
+    // FIXED: Restore to fullscreen mode (hides taskbar, allows apps on top)
+    mainWindow.setFullScreen(true);
     mainWindow.setAlwaysOnTop(false);
     mainWindow.focus();
-    mainWindow.moveTop();
-    
-    console.log('✅ Wallpaper mode disabled - window restored to normal');
+
+    console.log('✅ Wallpaper mode disabled - window restored to FULLSCREEN MODE');
     isWallpaperMode = false;
     return true;
     
@@ -179,15 +178,15 @@ function createWindow() {
   const { width, height } = primaryDisplay.bounds; // Changed from workAreaSize to bounds for true fullscreen
   const { x, y } = primaryDisplay.bounds;
 
-  // Create the browser window with KIOSK MODE settings
+  // Create the browser window with FULLSCREEN settings (allows apps on top)
   mainWindow = new BrowserWindow({
     x: 0, // Always start at 0,0 for fullscreen
     y: 0,
     width: width,
     height: height,
     frame: false,
-    fullscreen: true,               // KIOSK MODE: Enable fullscreen
-    kiosk: true,                    // KIOSK MODE: Enable kiosk mode (harder to exit)
+    fullscreen: true,               // FIXED: Use fullscreen (hides taskbar) but NOT kiosk (allows apps on top)
+    simpleFullscreen: false,        // Use real fullscreen (not simple mode)
     webPreferences: {
       nodeIntegration: false,        // SECURE: Disable node integration
       contextIsolation: true,        // SECURE: Enable context isolation
@@ -199,21 +198,29 @@ function createWindow() {
     backgroundColor: '#000000',
     show: false,
     resizable: false,               // Prevent resizing
-    minimizable: false,             // KIOSK MODE: Disable minimize
+    minimizable: false,             // Disable minimize
     maximizable: false,             // Disable maximize
     closable: true,                 // Allow closing (but only via admin)
-    alwaysOnTop: true,              // KIOSK MODE: Always on top
-    skipTaskbar: false,             // Show in taskbar
-    autoHideMenuBar: true           // Hide menu bar
+    alwaysOnTop: false,             // FIXED: Allow other apps to appear on top
+    skipTaskbar: false,             // FIXED: Show in taskbar so apps can appear on top
+    autoHideMenuBar: true,          // Hide menu bar
+    hasShadow: false                // Remove window shadow
   });
 
   // Load the HTML file
   mainWindow.loadFile('renderer/index.html');
 
-  // DISABLE DevTools shortcuts in production
-  if (process.env.NODE_ENV !== 'development') {
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+  // Block keyboard shortcuts that could exit fullscreen mode or open DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // FIXED: Block F11 from toggling fullscreen
+    if (input.key === 'F11') {
+      event.preventDefault();
+      console.log('🚫 F11 blocked - fullscreen toggle disabled');
+      return;
+    }
+
+    // Block DevTools shortcuts in production
+    if (process.env.NODE_ENV !== 'development') {
       if (
         input.key === 'F12' ||
         (input.control && input.shift && input.key === 'I') ||
@@ -223,8 +230,8 @@ function createWindow() {
         event.preventDefault();
         console.log('🚫 DevTools access blocked in production mode');
       }
-    });
-  }
+    }
+  });
 
   // Open DevTools ONLY in development
   if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
@@ -237,18 +244,17 @@ function createWindow() {
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    mainWindow.focus();
-    
-    // Set window to be behind other windows but above desktop
+
+    // FIXED: Fullscreen mode (hides taskbar) but allows other apps on top
+    console.log('✅ Window shown in FULLSCREEN MODE (taskbar hidden, apps can appear on top)');
+
+    // Reinforce fullscreen to ensure taskbar stays hidden
     setTimeout(() => {
-      mainWindow.setAlwaysOnTop(false);
-      mainWindow.moveTop(); // Move to top of z-order initially
-      
-      // Then move it behind all other windows
-      setTimeout(() => {
-        mainWindow.blur(); // Remove focus to send it back
-      }, 100);
-    }, 100);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setFullScreen(true);
+        console.log('✅ Fullscreen mode reinforced - taskbar hidden, apps can show on top');
+      }
+    }, 500);
   });
 
   // FIXED: Simplified close handling - only prevent accidental closes, not button closes
@@ -1231,28 +1237,25 @@ ipcMain.handle('set-desktop-mode', async (event, enabled) => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (enabled) {
-        // Enable pure Electron wallpaper mode
+        // Enable pure Electron wallpaper mode (exits fullscreen mode)
         const success = enableWallpaperMode();
         if (success) {
           console.log('✅ Wallpaper mode enabled - launcher is now behind everything');
           return { success: true, message: 'Wallpaper mode enabled! Launcher will stay behind other windows.' };
         } else {
           console.log('⚠️ Failed to enable wallpaper mode, falling back to desktop mode');
-          // Fallback to previous desktop mode
+          // Fallback: exit fullscreen and set to background
+          mainWindow.setFullScreen(false);
           mainWindow.setAlwaysOnTop(false);
           mainWindow.blur();
           return { success: true, message: 'Desktop mode enabled (basic background behavior)' };
         }
       } else {
-        // Disable wallpaper mode
+        // Disable wallpaper mode - restore to FULLSCREEN MODE
         const success = disableWallpaperMode();
         if (success || !isWallpaperMode) {
-          // Also do normal window restoration
-          mainWindow.setAlwaysOnTop(false);
-          mainWindow.focus();
-          mainWindow.moveTop();
-          console.log('✅ Normal mode enabled - window restored to normal behavior');
-          return { success: true, message: 'Normal mode enabled' };
+          console.log('✅ Fullscreen mode restored - apps can show on top');
+          return { success: true, message: 'Fullscreen mode enabled!' };
         } else {
           console.log('❌ Failed to disable wallpaper mode');
           return { success: false, message: 'Failed to disable wallpaper mode' };
