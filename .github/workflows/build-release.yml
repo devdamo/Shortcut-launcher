@@ -16,8 +16,10 @@ on:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
 
@@ -31,26 +33,47 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup build environment (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          # Clear npm cache to avoid permission issues
+          npm cache clean --force
+          # Set electron mirror for faster downloads
+          [System.Environment]::SetEnvironmentVariable('ELECTRON_MIRROR', 'https://npmmirror.com/mirrors/electron/', 'Process')
+
+      - name: Install dependencies (with retry)
+        uses: nick-fields/retry-action@v2
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: npm ci --legacy-peer-deps
+          shell: bash
+
+      - name: Verify Electron installation
+        run: npx electron --version
 
       - name: Build app (Windows)
         if: matrix.os == 'windows-latest'
         run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}\electron-cache
 
       - name: Build app (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: npm run build:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/electron-cache
 
       - name: Build app (macOS)
         if: matrix.os == 'macos-latest'
         run: npm run build:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/electron-cache
 
       - name: Upload artifacts (Windows)
         if: matrix.os == 'windows-latest'
