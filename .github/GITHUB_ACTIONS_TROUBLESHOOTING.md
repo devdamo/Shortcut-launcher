@@ -44,7 +44,28 @@ npm error command C:\Windows\system32\cmd.exe /d /s /c node install.js
 
 ---
 
-### Issue 3: Build succeeds but artifacts not uploaded
+### Issue 3: Electron verification fails on Ubuntu
+
+**Symptoms:**
+```
+FATAL:setuid_sandbox_host.cc(158)] The SUID sandbox helper binary was found, but is not configured correctly.
+/home/runner/work/.../electron exited with signal SIGTRAP
+```
+
+**Why this happens:**
+- Electron requires specific sandbox permissions on Linux
+- GitHub Actions runners don't have root access to configure sandbox
+- This is a verification-only issue, not a build issue
+
+**Solution:**
+- **Already fixed!** The workflow runs electron with `--no-sandbox` flag
+- If verification fails, it logs a message and continues
+- The build step will work fine (electron-builder handles sandbox properly)
+- You can safely ignore this verification warning
+
+---
+
+### Issue 4: Build succeeds but artifacts not uploaded
 
 **Symptoms:**
 - Build completes successfully
@@ -62,7 +83,7 @@ npm error command C:\Windows\system32\cmd.exe /d /s /c node install.js
 
 ---
 
-### Issue 4: Release not created after tag push
+### Issue 5: Release not created after tag push
 
 **Checklist:**
 - [ ] Tag starts with `v` (e.g., `v1.0.0`)
@@ -84,7 +105,7 @@ npm error command C:\Windows\system32\cmd.exe /d /s /c node install.js
 - **Automatic builds** on push to main/master
 - **Automatic releases** on version tags (v*)
 - **Cross-platform builds** (Windows, Linux, macOS)
-- **Retry logic** for installation failures
+- **Fast and simple** - single installation attempt
 - **Artifact management** with 90-day retention
 
 ### Simple Workflow: `build-simple.yml`

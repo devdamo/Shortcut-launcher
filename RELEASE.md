@@ -235,6 +235,15 @@ Update version in `package.json`:
 - Verify file patterns match your build outputs
 - Build outputs are configured to fail if no files are found (catches build issues early)
 
+### Ubuntu: "SUID sandbox helper binary" error
+**Error:** `FATAL:setuid_sandbox_host.cc(158)] The SUID sandbox helper binary was found`
+
+**This is normal and can be ignored:**
+- Occurs during Electron verification step on Ubuntu
+- Workflow automatically handles this with `--no-sandbox` flag
+- The actual build will work fine (electron-builder handles sandbox properly)
+- Just a verification warning, not a build failure
+
 ## GitHub Actions Workflow
 
 The workflow (`.github/workflows/build-release.yml`) is triggered by:
