@@ -122,7 +122,7 @@ jobs:
         run: |
           mkdir -p release-files
           # Copy all build files to release-files directory
-          find artifacts -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.zip" \) -exec cp {} release-files/ \;
+          find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.zip" \) -exec cp {} release-files/ \;
           echo "📦 Release files prepared:"
           ls -lh release-files/
 

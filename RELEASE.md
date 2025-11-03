@@ -245,6 +245,19 @@ Update version in `package.json`:
 - The actual build will work fine (electron-builder handles sandbox properly)
 - Just a verification warning, not a build failure
 
+### Linux: "Please specify author 'email'" error
+**Error:** `Please specify author 'email' in the application package.json`
+
+**Fix:** Update `package.json` author field:
+```json
+"author": {
+  "name": "Your Name or Team",
+  "email": "your-email@example.com"
+}
+```
+
+This is required for Linux .deb package maintainer information.
+
 ## GitHub Actions Workflow
 
 The workflow (`.github/workflows/build-release.yml`) is triggered by:
