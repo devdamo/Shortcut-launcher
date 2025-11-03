@@ -204,40 +204,55 @@ Users can choose their preferred installer:
 
 **Total Release Size:** ~830MB (all platforms, all formats)
 
-## 🔧 Additional Fix: Icon References
+## 🔧 Additional Fix: MSI Icon References
 
 **Issue:** MSI builder failing with:
 ```
 error LGHT0094 : The identifier 'Icon:ShortcutLauncherIcon.exe' could not be found
 ```
 
-**Cause:** Icon files referenced in `package.json` but not present in `assets/` folder.
+**Root Cause:** MSI shortcut creation (`createDesktopShortcut`, `createStartMenuShortcut`) requires icon files. Without icons, WiX linker creates invalid icon references.
 
-**Fix:** Removed icon references from `package.json`:
-- Removed `"icon": "assets/icon.ico"` from Windows config
-- Removed `"icon": "assets/icon.png"` from Linux config
-- Removed `"icon": "assets/icon.icns"` from macOS config
+**Fix Applied:** Disabled shortcut creation for MSI installer in `package.json`:
+```json
+"msi": {
+  "createDesktopShortcut": false,
+  "createStartMenuShortcut": false
+}
+```
+
+**Why This Works:**
+- MSI installer completes successfully without icon errors
+- NSIS installer (.exe) still creates desktop and Start Menu shortcuts
+- MSI users can still access app from Windows Start Menu (Apps list)
+- MSI users can manually create shortcuts if needed
 
 **Result:**
-- ✅ Builds use default Electron icon
 - ✅ MSI installer builds successfully
+- ✅ NSIS installer has full shortcut support
 - ✅ All builds work without icon files
+- ✅ No WiX linker errors
 
 **To add custom icons later:**
 1. Create icons following `assets/README.md` guide
-2. Add back icon references to `package.json`:
+2. Add icon files to `assets/` folder:
+   - `assets/icon.ico` (Windows)
+   - `assets/icon.png` (Linux)
+   - `assets/icon.icns` (macOS)
+3. Add icon references to `package.json`:
 ```json
 "win": {
-  "icon": "assets/icon.ico"  // Add this line back
-},
-"linux": {
-  "icon": "assets/icon.png"  // Add this line back
-},
-"mac": {
-  "icon": "assets/icon.icns"  // Add this line back
+  "icon": "assets/icon.ico"
 }
 ```
-3. Rebuild: `npm run build`
+4. Re-enable MSI shortcuts:
+```json
+"msi": {
+  "createDesktopShortcut": true,
+  "createStartMenuShortcut": true
+}
+```
+5. Rebuild: `npm run build:win`
 
 ---
 
@@ -246,10 +261,16 @@ error LGHT0094 : The identifier 'Icon:ShortcutLauncherIcon.exe' could not be fou
 All requested features are now implemented:
 - ✅ MSI installer for Windows
 - ✅ Linux build error fixed (author email)
-- ✅ MSI icon error fixed (removed non-existent icon refs)
+- ✅ MSI icon error fixed (disabled shortcuts for MSI to avoid icon requirement)
+- ✅ NSIS installer creates desktop and Start Menu shortcuts
 - ✅ All installers available in GitHub Releases
 - ✅ Complete documentation updated
 - ✅ Workflow handles all file types
-- ✅ Builds work with default icons (custom icons optional)
+- ✅ Builds work without custom icons (icons optional)
+
+**Installer Comparison:**
+- **NSIS (.exe)**: Full featured with shortcuts, custom install directory
+- **MSI**: Enterprise-friendly, no shortcuts (users access from Start Menu Apps list)
+- **Portable (.exe)**: No installation, run from anywhere
 
 Ready for production releases! 🎉

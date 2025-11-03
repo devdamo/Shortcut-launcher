@@ -90,9 +90,8 @@
     "msi": {
       "oneClick": false,
       "perMachine": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Shortcut Launcher",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
       "runAfterFinish": false
     },
     "nsis": {
