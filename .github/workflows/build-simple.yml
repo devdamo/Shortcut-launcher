@@ -49,25 +49,8 @@ jobs:
           npm cache clean --force
           Write-Host "NPM cache cleared"
 
-      - name: Install dependencies (Attempt 1)
-        id: install1
-        continue-on-error: true
+      - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
-
-      - name: Install dependencies (Attempt 2)
-        if: steps.install1.outcome == 'failure'
-        id: install2
-        continue-on-error: true
-        run: |
-          echo "First attempt failed, retrying..."
-          npm cache clean --force
-          npm ci --prefer-offline --no-audit
-
-      - name: Install dependencies (Attempt 3 - fallback)
-        if: steps.install2.outcome == 'failure'
-        run: |
-          echo "Using npm install as fallback..."
-          npm install
 
       - name: Verify installation
         run: |

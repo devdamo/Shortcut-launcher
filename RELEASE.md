@@ -42,6 +42,8 @@ This guide explains how to publish builds to GitHub and create releases.
 
 ## Building Locally
 
+All build commands create installers **without publishing** to GitHub (uses `--publish never`).
+
 ### Build for Current Platform
 ```bash
 npm run build
@@ -64,36 +66,53 @@ npm run build:all
 
 Output files will be in the `dist/` folder.
 
+**Note:** These commands only build - they don't publish to GitHub. Use `npm run publish` to build AND publish.
+
 ## Publishing Releases
 
 ### Method 1: Automated GitHub Actions (Recommended)
 
 This is the easiest method - builds happen automatically in the cloud!
 
-1. **Push your code to GitHub**
+**First-time setup:**
+1. **Update `package.json`** - Replace `YOUR_USERNAME` with your actual GitHub username:
+   - Line 8: `"url": "https://github.com/YOUR_USERNAME/shortcut-launcher.git"`
+   - Line 65: `"owner": "YOUR_USERNAME"`
+2. **Create the repository** on GitHub with the name `shortcut-launcher`
+3. **Push your code** to the repository
+
+**To create a release:**
+
+1. **Update version in `package.json`**
+   ```json
+   {
+     "version": "1.0.0"
+   }
+   ```
+
+2. **Commit and push**
    ```bash
    git add .
-   git commit -m "Prepare for release"
+   git commit -m "Release v1.0.0"
    git push
    ```
 
-2. **Create a version tag**
+3. **Create and push version tag**
    ```bash
-   # Update version in package.json first (e.g., to 1.0.1)
-   git tag v1.0.1
-   git push origin v1.0.1
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
-3. **GitHub Actions will automatically:**
-   - Build for Windows, macOS, and Linux
-   - Create a GitHub Release
-   - Upload all build artifacts
+4. **GitHub Actions will automatically:**
+   - Build for Windows, macOS, and Linux (without publishing)
+   - Upload build artifacts
+   - Create a GitHub Release with all files
    - Generate release notes
 
-4. **Check your release**
+5. **Check your release**
    - Go to your GitHub repository
    - Click "Releases" on the right sidebar
-   - Your release should appear with all the build files
+   - Your release will appear with downloadable installers
 
 ### Method 2: Manual Local Publishing
 
@@ -183,19 +202,19 @@ Update version in `package.json`:
 **Error:** `EPERM: operation not permitted` or `command failed`
 
 **Solutions:**
-1. The workflow has automatic retry logic (3 attempts)
-2. Clears npm cache between retries
-3. Falls back to `npm install` if `npm ci` fails
-4. If still failing, try the simpler workflow:
-   - Go to Actions tab → Build Simple → Run workflow
+1. The workflow clears npm cache before installation
+2. Uses `--prefer-offline` flag to use cached packages
+3. Check if node_modules is in `.gitignore` (it should be)
+4. Re-run the workflow (sometimes GitHub runners have transient issues)
+5. Try the simpler workflow: Actions tab → Build Simple → Run workflow
 
 ### Electron installation fails
 **Error:** `electron install.js failed`
 
 **Solutions:**
-1. Workflow automatically retries installation
-2. Uses `--prefer-offline` flag to use cached packages
-3. Verifies electron installation before building
+1. Workflow uses `--prefer-offline` flag to use cached packages
+2. Verifies electron installation before building
+3. Re-run the workflow (Electron downloads can timeout)
 4. Check Actions logs for detailed error messages
 
 ### Build works locally but fails in GitHub Actions
