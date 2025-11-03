@@ -172,8 +172,9 @@ Update version in `package.json`:
 ## Build Outputs
 
 ### Windows
-- `Shortcut Launcher Setup x.x.x.exe` - NSIS installer
-- `Shortcut Launcher x.x.x.exe` - Portable executable
+- `Shortcut Launcher Setup x.x.x.exe` - NSIS installer (.exe)
+- `Shortcut Launcher x.x.x.msi` - MSI installer (Windows Installer)
+- `Shortcut Launcher x.x.x.exe` - Portable executable (no install)
 - `latest.yml` - Auto-update metadata
 
 ### Linux

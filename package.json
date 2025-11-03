@@ -28,7 +28,10 @@
     "fullscreen",
     "black-white"
   ],
-  "author": "Shortcut Launcher Team",
+  "author": {
+    "name": "Shortcut Launcher Team",
+    "email": "support@shortcutlauncher.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -73,6 +76,10 @@
           "arch": ["x64"]
         },
         {
+          "target": "msi",
+          "arch": ["x64"]
+        },
+        {
           "target": "portable",
           "arch": ["x64"]
         }
@@ -80,6 +87,14 @@
       "icon": "assets/icon.ico",
       "publisherName": "Shortcut Launcher Team",
       "verifyUpdateCodeSignature": false
+    },
+    "msi": {
+      "oneClick": false,
+      "perMachine": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Shortcut Launcher",
+      "runAfterFinish": false
     },
     "nsis": {
       "oneClick": false,

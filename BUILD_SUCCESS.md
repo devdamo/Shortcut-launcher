@@ -5,8 +5,9 @@
 Your build **succeeded**! The error you saw was just about publishing to GitHub, not the build itself.
 
 ### Files Created ✅
-- ✅ `Shortcut Launcher Setup 1.0.0.exe` - Windows installer (NSIS)
-- ✅ `Shortcut Launcher 1.0.0.exe` - Portable executable
+- ✅ `Shortcut Launcher Setup 1.0.0.exe` - Windows installer (NSIS .exe)
+- ✅ `Shortcut Launcher 1.0.0.msi` - Windows installer (MSI)
+- ✅ `Shortcut Launcher 1.0.0.exe` - Portable executable (no install)
 - ✅ All files are in the `dist/` folder
 
 ### Why the Error Appeared? ℹ️
