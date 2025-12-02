@@ -41,11 +41,18 @@ class ScreenShareManager {
     }
 
     setupEventListeners() {
+        console.log('🎛️ Setting up event listeners...');
+
         // Generate Code button
         document.getElementById('connect-btn').addEventListener('click', () => this.generateCode());
 
         // Join with Code button
-        document.getElementById('join-code-btn').addEventListener('click', () => this.connectToCode());
+        const joinBtn = document.getElementById('join-code-btn');
+        console.log('🔘 Join button found:', joinBtn);
+        joinBtn.addEventListener('click', () => {
+            console.log('🖱️ Join button clicked!');
+            this.connectToCode();
+        });
 
         // Disconnect button
         document.getElementById('disconnect-btn').addEventListener('click', () => this.disconnect());
@@ -56,6 +63,19 @@ class ScreenShareManager {
 
         // Video player close
         document.getElementById('close-video-btn').addEventListener('click', () => this.closeVideoPlayer());
+
+        // Auto-uppercase join code input
+        const joinCodeInput = document.getElementById('join-code-input');
+        joinCodeInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
+        });
+
+        // Allow Enter key to join
+        joinCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.connectToCode();
+            }
+        });
 
         // Auto-hide video controls
         this.setupVideoControls();
@@ -215,8 +235,20 @@ class ScreenShareManager {
     }
 
     async connectToCode() {
-        const code = prompt('Enter the connection code:');
-        if (!code) return;
+        console.log('🔵 connectToCode() called');
+
+        const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+        console.log('🔑 Code entered:', code);
+
+        if (!code) {
+            alert('Please enter a connection code in the "Join Code" field');
+            return;
+        }
+
+        if (code.length !== 6) {
+            alert('Connection code must be 6 characters');
+            return;
+        }
 
         const username = document.getElementById('username').value.trim();
         if (!username) {
@@ -227,28 +259,51 @@ class ScreenShareManager {
         this.saveSettings();
 
         console.log(`🔗 Connecting to code: ${code}`);
+        console.log('📱 Initializing viewer peer...');
 
-        // Initialize our own peer
-        if (!this.peer || this.peer.destroyed) {
-            const myRandomId = 'viewer_' + this.generateRandomCode(8);
-            this.peer = new Peer(myRandomId, {
-                debug: 2,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' }
-                    ]
-                }
-            });
+        // Show loading state
+        const joinBtn = document.getElementById('join-code-btn');
+        const originalText = joinBtn.textContent;
+        joinBtn.textContent = '⏳ Connecting...';
+        joinBtn.disabled = true;
 
-            await new Promise((resolve) => {
-                this.peer.on('open', () => {
-                    console.log('✅ Viewer peer initialized');
-                    resolve();
+        try {
+            // Initialize our own peer
+            if (!this.peer || this.peer.destroyed) {
+                const myRandomId = 'viewer_' + this.generateRandomCode(8);
+                console.log(`🆔 My viewer ID: ${myRandomId}`);
+
+                this.peer = new Peer(myRandomId, {
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ]
+                    }
                 });
-            });
-        }
+
+                // Add error handler before waiting
+                this.peer.on('error', (error) => {
+                    console.error('❌ Viewer peer error:', error);
+                    alert('Connection error: ' + error.message);
+                });
+
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Peer initialization timeout'));
+                    }, 10000);
+
+                    this.peer.on('open', () => {
+                        clearTimeout(timeout);
+                        console.log('✅ Viewer peer initialized');
+                        resolve();
+                    });
+                });
+            }
+
+            console.log('📞 Attempting to connect to:', code);
 
         // Establish data connection
         const conn = this.peer.connect(code);
@@ -257,6 +312,9 @@ class ScreenShareManager {
             console.log('✅ Connected to sharer');
             this.activeConnection = conn;
 
+            // Clear the join code input
+            document.getElementById('join-code-input').value = '';
+
             // Send our info
             conn.send({
                 type: 'info',
@@ -264,28 +322,37 @@ class ScreenShareManager {
                 isViewer: true
             });
 
-            // Request their stream
-            console.log('📞 Calling for stream...');
-            const call = this.peer.call(code, new MediaStream()); // Empty stream as placeholder
+            // Wait a bit for connection to stabilize, then request stream
+            setTimeout(() => {
+                console.log('📞 Calling for stream...');
 
-            call.on('stream', (remoteStream) => {
-                console.log('📺 Receiving remote stream');
+                // Call without sending a stream (one-way screenshare)
+                const call = this.peer.call(code);
 
-                // Show video player
-                document.getElementById('video-player').style.display = 'block';
-                document.getElementById('viewing-username').textContent = 'Remote Screen';
+                call.on('stream', (remoteStream) => {
+                    console.log('📺 Receiving remote stream');
 
-                const remoteVideo = document.getElementById('remote-video');
-                remoteVideo.srcObject = remoteStream;
-                remoteVideo.play().catch(e => console.error('Error playing video:', e));
+                    // Show video player
+                    document.getElementById('video-player').style.display = 'block';
+                    document.getElementById('viewing-username').textContent = 'Remote Screen';
 
-                this.activeCall = call;
-            });
+                    const remoteVideo = document.getElementById('remote-video');
+                    remoteVideo.srcObject = remoteStream;
+                    remoteVideo.play().catch(e => console.error('Error playing video:', e));
 
-            call.on('close', () => {
-                console.log('❌ Call closed');
-                this.closeVideoPlayer();
-            });
+                    this.activeCall = call;
+                });
+
+                call.on('close', () => {
+                    console.log('❌ Call closed');
+                    this.closeVideoPlayer();
+                });
+
+                call.on('error', (error) => {
+                    console.error('❌ Call error:', error);
+                    alert('Error receiving stream: ' + error.message);
+                });
+            }, 500); // 500ms delay
         });
 
         conn.on('error', (error) => {
@@ -296,6 +363,28 @@ class ScreenShareManager {
         conn.on('data', (data) => {
             this.handlePeerData(data);
         });
+
+        // Add timeout for connection
+        const connectionTimeout = setTimeout(() => {
+            if (!conn.open) {
+                console.error('❌ Connection timeout');
+                alert('Connection timeout. The code may be invalid or the other person is offline.');
+                conn.close();
+            }
+        }, 15000);
+
+        conn.on('open', () => {
+            clearTimeout(connectionTimeout);
+        });
+
+        } catch (error) {
+            console.error('❌ Error in connectToCode:', error);
+            alert('Failed to connect: ' + error.message);
+        } finally {
+            // Restore button state
+            joinBtn.textContent = originalText;
+            joinBtn.disabled = false;
+        }
     }
 
     handlePeerData(data) {
