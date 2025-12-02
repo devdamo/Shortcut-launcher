@@ -1,11 +1,11 @@
 {
   "name": "shortcut-launcher",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Fullscreen shortcut launcher with software detection - Black & White Theme",
   "main": "src/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/shortcut-launcher.git"
+    "url": "https://github.com/devdamo/Shortcut-launcher.git"
   },
   "scripts": {
     "start": "electron .",
@@ -30,7 +30,7 @@
   ],
   "author": {
     "name": "Shortcut Launcher Team",
-    "email": "support@shortcutlauncher.com"
+    "email": "contact@overtimehosting.com"
   },
   "license": "MIT",
   "devDependencies": {
@@ -65,7 +65,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "YOUR_USERNAME",
+        "owner": "devdamo",
         "repo": "shortcut-launcher"
       }
     ],
