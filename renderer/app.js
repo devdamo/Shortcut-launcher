@@ -164,41 +164,41 @@ class ShortcutLauncher {
     setupEventListeners() {
         console.log('Setting up event listeners...');
         
-        // CRITICAL: Close button - FIXED with better error handling
+        // CRITICAL: Close button - INSTANT CLOSE
         const closeBtn = document.getElementById('close-btn');
         if (closeBtn) {
-            // Primary close handler
             closeBtn.addEventListener('click', async (e) => {
-                console.log('🔴 Close button clicked');
+                console.log('🔴 Close button clicked - INSTANT CLOSE');
                 e.preventDefault();
                 e.stopPropagation();
-                
-                // FIXED: More robust close handling
-                await this.closeApplication();
-            });
-            
-            // Backup close handler (double-click for force close)
-            closeBtn.addEventListener('dblclick', async (e) => {
-                console.log('🔴 Close button double-clicked - FORCE CLOSE');
-                e.preventDefault();
-                e.stopPropagation();
-                
+
+                // Use force close for instant closing
                 await this.forceCloseApplication();
             });
-            
-            console.log('✅ Close button event listeners added');
+
+            console.log('✅ Close button event listener added');
         } else {
             console.error('❌ Close button not found in DOM!');
         }
 
-        // Admin button
-        const adminBtn = document.getElementById('admin-btn');
-        if (adminBtn) {
-            adminBtn.addEventListener('click', () => {
-                console.log('Admin button clicked');
-                this.showAdminModal();
+        // Settings button
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                console.log('Settings button clicked');
+                this.showSettingsModal();
             });
-            console.log('✅ Admin button event listener added');
+            console.log('✅ Settings button event listener added');
+        }
+
+        // Remotely button
+        const remotelyBtn = document.getElementById('remotely-btn');
+        if (remotelyBtn) {
+            remotelyBtn.addEventListener('click', () => {
+                console.log('Remotely button clicked');
+                this.installRemotely();
+            });
+            console.log('✅ Remotely button event listener added');
         }
 
         // RustDesk button
@@ -209,16 +209,6 @@ class ShortcutLauncher {
                 this.installRustDesk();
             });
             console.log('✅ RustDesk button event listener added');
-        }
-
-        // Screen Share button
-        const screenshareBtn = document.getElementById('screenshare-btn');
-        if (screenshareBtn) {
-            screenshareBtn.addEventListener('click', () => {
-                console.log('Screen Share button clicked');
-                this.showScreenShareModal();
-            });
-            console.log('✅ Screen Share button event listener added');
         }
 
         // TOP BAR Add shortcut button - ONLY ADD BUTTON NOW
@@ -272,11 +262,11 @@ class ShortcutLauncher {
                 return;
             }
             
-            // Alt+A for admin panel
+            // Alt+A for settings panel
             if (e.altKey && e.key === 'a') {
-                console.log('Alt+A pressed - admin panel');
+                console.log('Alt+A pressed - settings panel');
                 e.preventDefault();
-                this.showAdminModal();
+                this.showSettingsModal();
                 return;
             }
             
@@ -370,14 +360,6 @@ class ShortcutLauncher {
             });
         }
 
-        // NEW: Window settings event listeners
-        const applyWindowSettings = document.getElementById('apply-window-settings');
-        if (applyWindowSettings) {
-            applyWindowSettings.addEventListener('click', () => {
-                this.applyWindowSettings();
-            });
-        }
-
         console.log('✅ Background event listeners set up');
     }
 
@@ -432,14 +414,9 @@ class ShortcutLauncher {
             modalClose.addEventListener('click', () => this.hideAddModal());
         }
 
-        const adminModalClose = document.getElementById('admin-modal-close');
-        if (adminModalClose) {
-            adminModalClose.addEventListener('click', () => this.hideAdminModal());
-        }
-
-        const screenshareModalClose = document.getElementById('screenshare-modal-close');
-        if (screenshareModalClose) {
-            screenshareModalClose.addEventListener('click', () => this.hideScreenShareModal());
+        const settingsModalClose = document.getElementById('settings-modal-close');
+        if (settingsModalClose) {
+            settingsModalClose.addEventListener('click', () => this.hideSettingsModal());
         }
 
         // Modal background clicks
@@ -452,20 +429,11 @@ class ShortcutLauncher {
             });
         }
 
-        const adminModal = document.getElementById('admin-modal');
-        if (adminModal) {
-            adminModal.addEventListener('click', (e) => {
-                if (e.target.id === 'admin-modal') {
-                    this.hideAdminModal();
-                }
-            });
-        }
-
-        const screenshareModal = document.getElementById('screenshare-modal');
-        if (screenshareModal) {
-            screenshareModal.addEventListener('click', (e) => {
-                if (e.target.id === 'screenshare-modal') {
-                    this.hideScreenShareModal();
+        const settingsModal = document.getElementById('settings-modal');
+        if (settingsModal) {
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target.id === 'settings-modal') {
+                    this.hideSettingsModal();
                 }
             });
         }
@@ -923,34 +891,20 @@ class ShortcutLauncher {
         }
     }
 
-    async showAdminModal() {
-        const modal = document.getElementById('admin-modal');
+    async showSettingsModal() {
+        const modal = document.getElementById('settings-modal');
         if (modal) {
             modal.style.display = 'block';
         }
-        
-        // Load admin data, background settings, and window settings
-        await this.loadAdminData();
+
+        // Load all settings data
         await this.loadBackgroundSettingsToModal();
-        await this.loadWindowSettings();
+        await this.loadServerSettings();
+        await this.loadUpdateInfo();
     }
 
-    hideAdminModal() {
-        const modal = document.getElementById('admin-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-    }
-
-    showScreenShareModal() {
-        const modal = document.getElementById('screenshare-modal');
-        if (modal) {
-            modal.style.display = 'block';
-        }
-    }
-
-    hideScreenShareModal() {
-        const modal = document.getElementById('screenshare-modal');
+    hideSettingsModal() {
+        const modal = document.getElementById('settings-modal');
         if (modal) {
             modal.style.display = 'none';
         }
@@ -958,8 +912,247 @@ class ShortcutLauncher {
 
     hideAllModals() {
         this.hideAddModal();
-        this.hideAdminModal();
-        this.hideScreenShareModal();
+        this.hideSettingsModal();
+    }
+
+    async loadServerSettings() {
+        const domainInput = document.getElementById('server-domain');
+        const statusEl = document.getElementById('server-status');
+        const dbStatusEl = document.getElementById('db-status');
+        const saveBtn = document.getElementById('save-server-btn');
+        const testBtn = document.getElementById('test-server-btn');
+
+        // Load saved domain from localStorage
+        const savedDomain = localStorage.getItem('server-domain') || '';
+        if (domainInput) {
+            domainInput.value = savedDomain;
+        }
+
+        // Update status based on whether domain is configured
+        if (savedDomain) {
+            statusEl.textContent = 'Configured';
+            statusEl.className = 'info-value status-badge connected';
+        } else {
+            statusEl.textContent = 'Not configured';
+            statusEl.className = 'info-value status-badge disconnected';
+        }
+
+        // Check database connection status
+        try {
+            if (window.dbAPI && window.dbAPI.getConnectionStatus) {
+                const dbStatus = await window.dbAPI.getConnectionStatus();
+                if (dbStatus.connected) {
+                    dbStatusEl.textContent = 'Connected';
+                    dbStatusEl.className = 'info-value status-badge connected';
+                } else {
+                    dbStatusEl.textContent = 'Disconnected';
+                    dbStatusEl.className = 'info-value status-badge disconnected';
+                }
+            } else {
+                dbStatusEl.textContent = 'Unavailable';
+                dbStatusEl.className = 'info-value status-badge disconnected';
+            }
+        } catch (error) {
+            dbStatusEl.textContent = 'Error';
+            dbStatusEl.className = 'info-value status-badge disconnected';
+        }
+
+        // Add save button handler
+        if (saveBtn && !saveBtn.hasAttribute('data-handler-added')) {
+            saveBtn.setAttribute('data-handler-added', 'true');
+            saveBtn.addEventListener('click', () => {
+                const domain = domainInput.value.trim();
+                localStorage.setItem('server-domain', domain);
+                if (domain) {
+                    statusEl.textContent = 'Saved';
+                    statusEl.className = 'info-value status-badge connected';
+                } else {
+                    statusEl.textContent = 'Not configured';
+                    statusEl.className = 'info-value status-badge disconnected';
+                }
+            });
+        }
+
+        // Add test button handler
+        if (testBtn && !testBtn.hasAttribute('data-handler-added')) {
+            testBtn.setAttribute('data-handler-added', 'true');
+            testBtn.addEventListener('click', async () => {
+                const domain = domainInput.value.trim();
+                if (!domain) {
+                    statusEl.textContent = 'Enter a domain first';
+                    statusEl.className = 'info-value status-badge disconnected';
+                    return;
+                }
+
+                testBtn.textContent = 'Testing...';
+                testBtn.disabled = true;
+                statusEl.textContent = 'Testing...';
+                statusEl.className = 'info-value status-badge';
+
+                try {
+                    const response = await fetch(domain, { method: 'HEAD', mode: 'no-cors' });
+                    statusEl.textContent = 'Reachable';
+                    statusEl.className = 'info-value status-badge connected';
+                } catch (error) {
+                    statusEl.textContent = 'Unreachable';
+                    statusEl.className = 'info-value status-badge disconnected';
+                }
+
+                testBtn.textContent = 'Test Connection';
+                testBtn.disabled = false;
+            });
+        }
+    }
+
+    async loadUpdateInfo() {
+        const currentVersionEl = document.getElementById('current-version');
+        const latestVersionEl = document.getElementById('latest-version');
+        const statusEl = document.getElementById('update-status');
+        const checkBtn = document.getElementById('check-updates-btn');
+
+        // Get current version
+        this.currentVersion = '1.0.0';
+        currentVersionEl.textContent = `v${this.currentVersion}`;
+        latestVersionEl.textContent = '--';
+        statusEl.textContent = '--';
+
+        // Add check updates handler
+        if (checkBtn && !checkBtn.hasAttribute('data-handler-added')) {
+            checkBtn.setAttribute('data-handler-added', 'true');
+            checkBtn.addEventListener('click', async () => {
+                await this.checkForUpdates();
+            });
+        }
+    }
+
+    async checkForUpdates() {
+        const latestVersionEl = document.getElementById('latest-version');
+        const statusEl = document.getElementById('update-status');
+        const installBtn = document.getElementById('install-update-btn');
+        const checkBtn = document.getElementById('check-updates-btn');
+
+        checkBtn.textContent = 'Checking...';
+        checkBtn.disabled = true;
+        latestVersionEl.textContent = 'Checking...';
+        statusEl.textContent = 'Fetching...';
+
+        try {
+            // Check GitHub releases API - correct repo
+            const response = await fetch('https://api.github.com/repos/devdamo/Shortcut-launcher/releases/latest');
+
+            if (response.ok) {
+                const release = await response.json();
+                this.latestRelease = release;
+                const latestVersion = release.tag_name.replace('v', '');
+
+                latestVersionEl.textContent = `v${latestVersion}`;
+
+                if (this.compareVersions(latestVersion, this.currentVersion) > 0) {
+                    statusEl.textContent = 'Update available!';
+                    statusEl.style.color = '#4CAF50';
+                    installBtn.style.display = 'inline-block';
+                    installBtn.onclick = () => this.downloadAndInstallUpdate();
+                } else {
+                    statusEl.textContent = 'Up to date';
+                    statusEl.style.color = '#4CAF50';
+                    installBtn.style.display = 'none';
+                }
+            } else if (response.status === 404) {
+                latestVersionEl.textContent = 'No releases';
+                statusEl.textContent = 'No releases found';
+                statusEl.style.color = '#888';
+            } else {
+                latestVersionEl.textContent = 'Failed';
+                statusEl.textContent = 'Check failed';
+                statusEl.style.color = '#f44336';
+            }
+        } catch (error) {
+            console.error('Error checking for updates:', error);
+            latestVersionEl.textContent = 'Error';
+            statusEl.textContent = 'Network error';
+            statusEl.style.color = '#f44336';
+        }
+
+        checkBtn.textContent = 'Check for Updates';
+        checkBtn.disabled = false;
+    }
+
+    async downloadAndInstallUpdate() {
+        if (!this.latestRelease) {
+            alert('No update available');
+            return;
+        }
+
+        const installBtn = document.getElementById('install-update-btn');
+        const progressDiv = document.getElementById('update-progress');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const statusEl = document.getElementById('update-status');
+
+        // Find the appropriate asset (Windows exe or setup)
+        const assets = this.latestRelease.assets || [];
+        let downloadAsset = assets.find(a =>
+            a.name.endsWith('.exe') ||
+            a.name.endsWith('.msi') ||
+            a.name.includes('Setup') ||
+            a.name.includes('win')
+        );
+
+        // If no specific asset, use the zipball
+        const downloadUrl = downloadAsset ? downloadAsset.browser_download_url : this.latestRelease.zipball_url;
+        const fileName = downloadAsset ? downloadAsset.name : `update-${this.latestRelease.tag_name}.zip`;
+
+        installBtn.style.display = 'none';
+        progressDiv.style.display = 'block';
+        progressFill.style.width = '0%';
+        progressText.textContent = 'Starting download...';
+        statusEl.textContent = 'Downloading...';
+
+        try {
+            // Call main process to download
+            if (window.electronAPI && window.electronAPI.downloadUpdate) {
+                const result = await window.electronAPI.downloadUpdate(downloadUrl, fileName);
+
+                if (result.success) {
+                    progressFill.style.width = '100%';
+                    progressText.textContent = 'Download complete! Installing...';
+                    statusEl.textContent = 'Installing...';
+
+                    // Install the update
+                    if (window.electronAPI.installUpdate) {
+                        await window.electronAPI.installUpdate(result.filePath);
+                    }
+                } else {
+                    throw new Error(result.error || 'Download failed');
+                }
+            } else {
+                // Fallback: open in browser
+                progressText.textContent = 'Opening download in browser...';
+                window.open(downloadUrl, '_blank');
+                progressDiv.style.display = 'none';
+                installBtn.style.display = 'inline-block';
+            }
+        } catch (error) {
+            console.error('Update error:', error);
+            progressDiv.style.display = 'none';
+            installBtn.style.display = 'inline-block';
+            statusEl.textContent = 'Update failed';
+            statusEl.style.color = '#f44336';
+            alert('Update failed: ' + error.message);
+        }
+    }
+
+    compareVersions(v1, v2) {
+        const parts1 = v1.split('.').map(Number);
+        const parts2 = v2.split('.').map(Number);
+
+        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+            const p1 = parts1[i] || 0;
+            const p2 = parts2[i] || 0;
+            if (p1 > p2) return 1;
+            if (p1 < p2) return -1;
+        }
+        return 0;
     }
 
     updatePathField(type) {
@@ -1071,94 +1264,7 @@ class ShortcutLauncher {
         }
     }
 
-    async loadAdminData() {
-        try {
-            if (!this.dbConnected || !window.dbAPI) {
-                console.warn('Database API not available for admin data');
-                this.showOfflineAdminData();
-                return;
-            }
-            
-            // PC Info
-            const pcInfo = await window.dbAPI.getPCInfo();
-            const pcInfoElement = document.getElementById('pc-info');
-            if (pcInfoElement && pcInfo) {
-                pcInfoElement.innerHTML = `
-                    <p><strong>Hostname:</strong> ${this.escapeHtml(pcInfo.hostname)}</p>
-                    <p><strong>Platform:</strong> ${this.escapeHtml(pcInfo.platform)}</p>
-                    <p><strong>Architecture:</strong> ${this.escapeHtml(pcInfo.arch)}</p>
-                    <p><strong>Username:</strong> ${this.escapeHtml(pcInfo.username)}</p>
-                `;
-            }
-
-            // Database Status
-            const dbStatus = await window.dbAPI.getConnectionStatus();
-            const dbStatusElement = document.getElementById('db-status');
-            if (dbStatusElement) {
-                dbStatusElement.innerHTML = `
-                    <p><strong>Connection:</strong> ${dbStatus.connected ? '✅ Connected' : '❌ Disconnected'}</p>
-                    <p><strong>Current PC:</strong> ${this.escapeHtml(dbStatus.hostname)}</p>
-                    <p><strong>Table:</strong> ${this.escapeHtml(dbStatus.tableName)}</p>
-                `;
-            }
-
-            // Shortcuts List
-            const shortcuts = await window.dbAPI.getShortcuts();
-            this.renderAdminShortcuts(shortcuts);
-
-        } catch (error) {
-            console.error('Error loading admin data:', error);
-            this.showOfflineAdminData();
-        }
-    }
-
-    showOfflineAdminData() {
-        const pcInfoElement = document.getElementById('pc-info');
-        const dbStatusElement = document.getElementById('db-status');
-        const shortcutsListElement = document.getElementById('shortcuts-list');
-        
-        if (pcInfoElement) {
-            pcInfoElement.innerHTML = '<p>❌ PC information not available (offline mode)</p>';
-        }
-        
-        if (dbStatusElement) {
-            dbStatusElement.innerHTML = '<p><strong>Connection:</strong> ❌ Disconnected</p>';
-        }
-        
-        if (shortcutsListElement) {
-            shortcutsListElement.innerHTML = '<p>❌ Shortcuts data not available (offline mode)</p>';
-        }
-    }
-
-    renderAdminShortcuts(shortcuts) {
-        const shortcutsListElement = document.getElementById('shortcuts-list');
-        if (!shortcutsListElement) return;
-        
-        let shortcutsHtml = '<div style="max-height: 200px; overflow-y: auto;">';
-        
-        if (shortcuts.length === 0) {
-            shortcutsHtml += '<p>No shortcuts found for this PC.</p>';
-        } else {
-            shortcuts.forEach(shortcut => {
-                const status = shortcut.type === 'software' ? 
-                    (shortcut.exists_on_pc ? '✅' : '❌') : '🌐';
-                const date = new Date(shortcut.created_at).toLocaleDateString();
-                const size = `${shortcut.width || 250}×${shortcut.height || 700}`;
-                shortcutsHtml += `
-                    <div style="margin-bottom: 10px; padding: 8px; border: 1px solid #ffffff;">
-                        <strong>${status} ${this.escapeHtml(shortcut.name)}</strong><br>
-                        <small>${this.escapeHtml(shortcut.type)}: ${this.escapeHtml(shortcut.path)}</small><br>
-                        <small>Size: ${size}px | Added: ${date}</small>
-                    </div>
-                `;
-            });
-        }
-        
-        shortcutsHtml += '</div>';
-        shortcutsListElement.innerHTML = shortcutsHtml;
-    }
-
-    // NEW: Background settings functions
+    // Background settings functions
     async loadBackgroundSettings() {
         try {
             if (!this.dbConnected || !window.dbAPI) {
@@ -1432,52 +1538,6 @@ class ShortcutLauncher {
         }
     }
 
-    async loadWindowSettings() {
-        try {
-            if (!this.dbConnected || !window.dbAPI) {
-                return;
-            }
-
-            const desktopMode = await window.dbAPI.getSetting('desktop_mode');
-            const desktopModeCheckbox = document.getElementById('desktop-mode');
-            if (desktopModeCheckbox) {
-                desktopModeCheckbox.checked = desktopMode === 'true';
-            }
-        } catch (error) {
-            console.error('Error loading window settings:', error);
-        }
-    }
-
-    async applyWindowSettings() {
-        try {
-            const desktopModeCheckbox = document.getElementById('desktop-mode');
-            const desktopMode = desktopModeCheckbox ? desktopModeCheckbox.checked : false;
-
-            // Apply the setting
-            if (window.electronAPI && window.electronAPI.setDesktopMode) {
-                const result = await window.electronAPI.setDesktopMode(desktopMode);
-                
-                if (result.success) {
-                    // Save to database
-                    if (this.dbConnected && window.dbAPI) {
-                        await window.dbAPI.setSetting('desktop_mode', desktopMode.toString());
-                        console.log('✅ Window settings applied and saved');
-                    }
-
-                    alert('Window settings applied successfully!\n\n' + result.message);
-                } else {
-                    throw new Error(result.message || 'Failed to apply window settings');
-                }
-            } else {
-                throw new Error('Window mode control not available');
-            }
-
-        } catch (error) {
-            console.error('Error applying window settings:', error);
-            this.showMessage('Error applying window settings: ' + error.message);
-        }
-    }
-
     async resetBackgroundSettings() {
         try {
             // Reset to solid black
@@ -1661,14 +1721,12 @@ class ShortcutLauncher {
         }
     }
 
-    // NEW: Keyboard navigation methods
+    // Keyboard navigation methods
     isModalOpen() {
         const addModal = document.getElementById('add-modal');
-        const adminModal = document.getElementById('admin-modal');
-        const screenshareModal = document.getElementById('screenshare-modal');
-        return (addModal && addModal.style.display === 'block') || 
-               (adminModal && adminModal.style.display === 'block') ||
-               (screenshareModal && screenshareModal.style.display === 'block');
+        const settingsModal = document.getElementById('settings-modal');
+        return (addModal && addModal.style.display === 'block') ||
+               (settingsModal && settingsModal.style.display === 'block');
     }
 
     initializeKeyboardFocus() {
@@ -1933,7 +1991,48 @@ class ShortcutLauncher {
         }, 300);
     }
 
-    // NEW: Install RustDesk method
+    // Install Remotely agent (Windows only)
+    async installRemotely() {
+        console.log('Installing Remotely...');
+
+        if (!confirm('This will download and install Remotely (Remote Support Agent).\n\nYou will be prompted for Administrator privileges.\n\nDo you want to continue?')) {
+            return;
+        }
+
+        try {
+            if (!window.electronAPI || !window.electronAPI.installRemotely) {
+                this.showMessage('Cannot install Remotely: System API not available');
+                return;
+            }
+
+            // Show loading state
+            const remotelyBtn = document.getElementById('remotely-btn');
+            if (remotelyBtn) {
+                remotelyBtn.textContent = 'Installing...';
+                remotelyBtn.disabled = true;
+            }
+
+            const result = await window.electronAPI.installRemotely();
+
+            if (result.success) {
+                this.showMessage('Remotely installation started successfully!');
+            } else {
+                throw new Error(result.error || 'Installation failed');
+            }
+
+        } catch (error) {
+            console.error('Remotely installation error:', error);
+            this.showMessage('Failed to install Remotely: ' + error.message);
+        } finally {
+            const remotelyBtn = document.getElementById('remotely-btn');
+            if (remotelyBtn) {
+                remotelyBtn.textContent = 'Remotely';
+                remotelyBtn.disabled = false;
+            }
+        }
+    }
+
+    // Install RustDesk method
     async installRustDesk() {
         console.log('Installing RustDesk...');
         
@@ -2085,29 +2184,48 @@ class ShortcutLauncher {
         }
     }
 
-    createTaskbarWindowElement(window) {
+    createTaskbarWindowElement(windowInfo) {
         const element = document.createElement('div');
         element.className = 'taskbar-window';
-        element.dataset.processId = window.processId;
+        element.dataset.processId = windowInfo.processId;
 
-        // Get icon based on process name
-        const icon = this.getWindowIcon(window.processName);
+        // Create icon element - will be updated async with real icon
+        const fallbackIcon = this.getFallbackWindowIcon(windowInfo.processName);
 
         element.innerHTML = `
-            <span class="taskbar-window-icon">${icon}</span>
-            <span class="taskbar-window-title">${this.escapeHtml(window.windowTitle)}</span>
+            <span class="taskbar-window-icon">${fallbackIcon}</span>
+            <span class="taskbar-window-title">${this.escapeHtml(windowInfo.windowTitle)}</span>
         `;
+
+        // Load real icon asynchronously if exePath is available
+        if (windowInfo.exePath && window.electronAPI && window.electronAPI.getProcessIcon) {
+            this.loadTaskbarIcon(element, windowInfo.exePath);
+        }
 
         // Add click handler to switch to window
         element.addEventListener('click', async () => {
-            await this.switchToWindow(window.processId);
+            await this.switchToWindow(windowInfo.processId);
         });
 
         return element;
     }
 
-    getWindowIcon(processName) {
-        // Map process names to icons
+    async loadTaskbarIcon(element, exePath) {
+        try {
+            const iconData = await window.electronAPI.getProcessIcon(exePath);
+            if (iconData) {
+                const iconSpan = element.querySelector('.taskbar-window-icon');
+                if (iconSpan) {
+                    iconSpan.innerHTML = `<img src="${iconData}" style="width: 20px; height: 20px; vertical-align: middle;" />`;
+                }
+            }
+        } catch (error) {
+            console.log('Could not load taskbar icon:', error.message);
+        }
+    }
+
+    getFallbackWindowIcon(processName) {
+        // Fallback emoji icons for when real icons aren't available
         const iconMap = {
             'chrome': '🌐',
             'firefox': '🦊',

@@ -45,18 +45,25 @@ try {
     
     // NEW: RustDesk installation
     installRustDesk: () => ipcRenderer.invoke('install-rustdesk'),
+
+    // NEW: Remotely installation
+    installRemotely: () => ipcRenderer.invoke('install-remotely'),
     
     // NEW: Window mode control
     setDesktopMode: (enabled) => ipcRenderer.invoke('set-desktop-mode', enabled),
-
-    // NEW: Screen capture for screen sharing (uses IPC to main process)
-    getDesktopSources: () => ipcRenderer.invoke('get-desktop-sources'),
 
     // NEW: Taskbar - get open windows
     getOpenWindows: () => ipcRenderer.invoke('get-open-windows'),
 
     // NEW: Taskbar - focus/switch to window
-    focusWindow: (processId) => ipcRenderer.invoke('focus-window', processId)
+    focusWindow: (processId) => ipcRenderer.invoke('focus-window', processId),
+
+    // NEW: Get icon from process executable
+    getProcessIcon: (exePath) => ipcRenderer.invoke('get-process-icon', exePath),
+
+    // NEW: Auto-update functionality
+    downloadUpdate: (url, fileName) => ipcRenderer.invoke('download-update', url, fileName),
+    installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath)
   });
   
   console.log('✅ electronAPI exposed successfully');

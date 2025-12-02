@@ -7,13 +7,13 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Top Bar with Add, Admin, Screen Share, RustDesk and Close buttons -->
+    <!-- Top Bar with Add, Settings, Remotely, RustDesk and Close buttons -->
     <div class="top-bar">
         <div class="top-bar-controls">
             <button id="add-shortcut-btn" class="control-btn add-btn">+</button>
-            <button id="admin-btn" class="control-btn admin-btn">Admin</button>
-            <button id="screenshare-btn" class="control-btn screenshare-btn">📺 Screen Share</button>
-            <button id="rustdesk-btn" class="control-btn rustdesk-btn">📡 RustDesk</button>
+            <button id="settings-btn" class="control-btn settings-btn">Settings</button>
+            <button id="remotely-btn" class="control-btn remotely-btn">Remotely</button>
+            <button id="rustdesk-btn" class="control-btn rustdesk-btn">RustDesk</button>
             <button id="close-btn" class="control-btn close-btn">×</button>
         </div>
     </div>
@@ -76,177 +76,138 @@
         </div>
     </div>
 
-    <!-- Admin Modal -->
-    <div id="admin-modal" class="modal">
-        <div class="modal-content admin-modal-content">
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content settings-modal-content">
             <div class="modal-header">
-                <h2>Admin Panel</h2>
-                <button id="admin-modal-close" class="modal-close">×</button>
+                <h2>Settings</h2>
+                <button id="settings-modal-close" class="modal-close">×</button>
             </div>
             <div class="modal-body">
-                <div class="admin-section">
-                    <h3>Window Settings</h3>
-                    <div id="window-settings">
-                        <div class="window-option">
-                            <label>
-                                <input type="checkbox" id="desktop-mode" />
-                                Wallpaper Mode (stays behind other windows)
-                            </label>
-                            <p style="font-size: 12px; color: #ccc; margin-top: 5px;">
-                                When enabled, the launcher stays behind other windows like a desktop widget.
-                                <br><strong>No compilation required!</strong> Pure Electron implementation.
-                            </p>
-                        </div>
-                        <div class="window-actions">
-                            <button id="apply-window-settings" class="save-btn">Apply Window Settings</button>
-                        </div>
+                <!-- Background Settings -->
+                <div class="settings-section">
+                    <div class="section-header">
+                        <h3>Background</h3>
                     </div>
-                </div>
-                
-                <div class="admin-section">
-                    <h3>Background Settings</h3>
-                    <div id="background-settings">
-                        <div class="background-option">
-                            <label>Background Type:</label>
-                            <select id="background-type">
-                                <option value="solid">Solid Color (Black)</option>
+                    <div class="settings-card">
+                        <div class="setting-row">
+                            <label class="setting-label">Type</label>
+                            <select id="background-type" class="setting-select">
+                                <option value="solid">Solid Black</option>
                                 <option value="gradient">Gradient</option>
-                                <option value="image">Background Image</option>
+                                <option value="image">Image</option>
                             </select>
                         </div>
-                        
-                        <div id="gradient-options" class="background-option" style="display: none;">
-                            <label>Gradient Style:</label>
-                            <select id="gradient-style">
-                                <option value="linear-black-gray">Black to Gray</option>
-                                <option value="linear-gray-black">Gray to Black</option>
-                                <option value="radial-black-gray">Radial Black to Gray</option>
-                                <option value="diagonal-black-gray">Diagonal Black to Gray</option>
-                                <option value="custom">Custom</option>
-                            </select>
-                            <div id="custom-gradient" style="display: none; margin-top: 10px;">
-                                <input type="text" id="gradient-css" placeholder="Enter CSS gradient (e.g., linear-gradient(45deg, #000, #333))" style="width: 100%;">
-                            </div>
-                        </div>
-                        
-                        <div id="image-options" class="background-option" style="display: none;">
-                            <label>Background Image:</label>
-                            <div class="image-controls">
-                                <button id="browse-background" class="browse-btn">Choose Image</button>
-                                <button id="remove-background" class="cancel-btn">Remove Image</button>
-                            </div>
-                            <div id="image-preview" style="margin-top: 10px;"></div>
-                            <div style="margin-top: 10px;">
-                                <label>Image Settings:</label>
-                                <select id="background-size">
-                                    <option value="cover">Cover (fill screen)</option>
-                                    <option value="contain">Contain (fit in screen)</option>
-                                    <option value="stretch">Stretch</option>
-                                    <option value="tile">Tile/Repeat</option>
+
+                        <div id="gradient-options" class="setting-group" style="display: none;">
+                            <div class="setting-row">
+                                <label class="setting-label">Style</label>
+                                <select id="gradient-style" class="setting-select">
+                                    <option value="linear-black-gray">Black to Gray</option>
+                                    <option value="linear-gray-black">Gray to Black</option>
+                                    <option value="radial-black-gray">Radial</option>
+                                    <option value="diagonal-black-gray">Diagonal</option>
+                                    <option value="custom">Custom CSS</option>
                                 </select>
-                                <label style="margin-top: 10px; display: block;">Opacity:</label>
-                                <input type="range" id="background-opacity" min="10" max="100" value="100" style="width: 100%;">
-                                <span id="opacity-value">100%</span>
+                            </div>
+                            <div id="custom-gradient" class="setting-row" style="display: none;">
+                                <input type="text" id="gradient-css" class="setting-input" placeholder="linear-gradient(45deg, #000, #333)">
                             </div>
                         </div>
-                        
-                        <div class="background-actions">
-                            <button id="apply-background" class="save-btn">Apply Background</button>
-                            <button id="reset-background" class="cancel-btn">Reset to Default</button>
+
+                        <div id="image-options" class="setting-group" style="display: none;">
+                            <div class="setting-row">
+                                <label class="setting-label">Image</label>
+                                <div class="button-group">
+                                    <button id="browse-background" class="btn-secondary">Choose</button>
+                                    <button id="remove-background" class="btn-danger">Remove</button>
+                                </div>
+                            </div>
+                            <div id="image-preview" class="image-preview-box"></div>
+                            <div class="setting-row">
+                                <label class="setting-label">Fit</label>
+                                <select id="background-size" class="setting-select">
+                                    <option value="cover">Cover</option>
+                                    <option value="contain">Contain</option>
+                                    <option value="stretch">Stretch</option>
+                                    <option value="tile">Tile</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label class="setting-label">Opacity</label>
+                                <div class="range-container">
+                                    <input type="range" id="background-opacity" min="10" max="100" value="100" class="setting-range">
+                                    <span id="opacity-value" class="range-value">100%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-actions">
+                            <button id="apply-background" class="btn-primary">Apply</button>
+                            <button id="reset-background" class="btn-secondary">Reset</button>
                         </div>
                     </div>
                 </div>
-                
-                <div class="admin-section">
-                    <h3>PC Information</h3>
-                    <div id="pc-info"></div>
-                </div>
-                <div class="admin-section">
-                    <h3>Database Status</h3>
-                    <div id="db-status"></div>
-                </div>
-                <div class="admin-section">
-                    <h3>Shortcuts Management</h3>
-                    <div id="shortcuts-list"></div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Screen Share Modal -->
-    <div id="screenshare-modal" class="modal">
-        <div class="modal-content screenshare-modal-content">
-            <div class="modal-header">
-                <h2>📺 Direct P2P Screen Share</h2>
-                <button id="screenshare-modal-close" class="modal-close">×</button>
-            </div>
-            <div class="modal-body">
-                <!-- Connection Settings -->
-                <div class="screenshare-section" id="connection-section">
-                    <h3>🔑 Connection Code</h3>
-                    <p style="font-size: 12px; color: #ccc; margin-bottom: 15px;">
-                        No relay server needed! Direct peer-to-peer connection.
-                    </p>
-                    <div class="form-group">
-                        <label for="server-url">Your Connection Code:</label>
-                        <input type="text" id="server-url" placeholder="Click 'Generate Code' to get started" readonly style="cursor: pointer;" />
+                <!-- Server Settings -->
+                <div class="settings-section">
+                    <div class="section-header">
+                        <h3>Server</h3>
                     </div>
-                    <div class="form-group">
-                        <label for="username">Username:</label>
-                        <input type="text" id="username" placeholder="Enter your username" />
-                    </div>
-                    <div class="form-group">
-                        <label for="join-code-input">Join Code (from friend):</label>
-                        <input type="text" id="join-code-input" placeholder="Enter 6-character code (e.g., ABC123)" maxlength="6" style="text-transform: uppercase; letter-spacing: 2px;" />
-                    </div>
-                    <div class="connection-status">
-                        <span id="connection-indicator" class="indicator disconnected">●</span>
-                        <span id="connection-text">Disconnected</span>
-                    </div>
-                    <div class="connection-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button id="connect-btn" class="save-btn">🔑 Generate Code</button>
-                        <button id="join-code-btn" class="save-btn" style="background: #2196F3; border-color: #2196F3;">📥 Join with Code</button>
-                        <button id="disconnect-btn" class="cancel-btn" style="display: none;">Disconnect</button>
+                    <div class="settings-card">
+                        <div class="setting-row">
+                            <label class="setting-label">Domain</label>
+                            <input type="text" id="server-domain" class="setting-input" placeholder="https://your-server.com">
+                        </div>
+                        <div class="info-grid" style="margin-top: 12px;">
+                            <div class="info-item">
+                                <span class="info-label">Domain Status</span>
+                                <span id="server-status" class="info-value status-badge">Not configured</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Database</span>
+                                <span id="db-status" class="info-value status-badge">Checking...</span>
+                            </div>
+                        </div>
+                        <div class="setting-actions">
+                            <button id="save-server-btn" class="btn-primary">Save</button>
+                            <button id="test-server-btn" class="btn-secondary">Test Connection</button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Share Controls -->
-                <div class="screenshare-section" id="share-section" style="display: none;">
-                    <h3>Share Your Screen</h3>
-                    <div class="share-status">
-                        <span id="share-indicator" class="indicator">●</span>
-                        <span id="share-text">Not sharing</span>
+                <!-- Updates -->
+                <div class="settings-section">
+                    <div class="section-header">
+                        <h3>Updates</h3>
                     </div>
-                    <div class="share-actions">
-                        <button id="start-share-btn" class="save-btn">Start Sharing</button>
-                        <button id="stop-share-btn" class="cancel-btn" style="display: none;">Stop Sharing</button>
+                    <div class="settings-card">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Current Version</span>
+                                <span id="current-version" class="info-value version-tag">v0.0.0</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Latest Version</span>
+                                <span id="latest-version" class="info-value">--</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Status</span>
+                                <span id="update-status" class="info-value">--</span>
+                            </div>
+                        </div>
+                        <div id="update-progress" class="update-progress" style="display: none;">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill"></div>
+                            </div>
+                            <span id="progress-text" class="progress-text">Downloading...</span>
+                        </div>
+                        <div class="setting-actions">
+                            <button id="check-updates-btn" class="btn-secondary">Check for Updates</button>
+                            <button id="install-update-btn" class="btn-primary" style="display: none;">Download & Install</button>
+                        </div>
                     </div>
-                    <p style="font-size: 12px; color: #ccc; margin-top: 10px;">
-                        Share your screen and audio with other connected users. They can view your screen in real-time.
-                    </p>
                 </div>
-
-                <!-- User List -->
-                <div class="screenshare-section" id="users-section" style="display: none;">
-                    <h3>Connected Users</h3>
-                    <div id="users-list" class="users-list">
-                        <!-- Users will be populated here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Video Player (Full Screen) -->
-    <div id="video-player" class="video-player" style="display: none;">
-        <video id="remote-video" autoplay playsinline muted></video>
-        <div id="video-controls" class="video-controls">
-            <div class="video-info">
-                <span id="viewing-username">Unknown User</span>
-                <span id="video-status" style="margin-left: 20px; font-size: 12px; color: #ccc;"></span>
-            </div>
-            <div class="video-actions">
-                <button id="close-video-btn" class="close-video-btn">Close</button>
             </div>
         </div>
     </div>
@@ -264,10 +225,6 @@
         <p>Loading...</p>
     </div>
 
-    <!-- PeerJS for P2P connections -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
     <script src="app.js"></script>
-    <script src="screenshare.js"></script>
 </body>
 </html>

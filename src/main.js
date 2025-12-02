@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, net, screen, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, net, screen } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 const os = require('os');
@@ -17,6 +17,7 @@ let pcInfo = null;
 let isDbConnected = false;
 let isWallpaperMode = false;
 let iconsDir = null; // Directory for storing icons locally
+let processIconCache = new Map(); // Cache for process icons
 
 // Pure Electron wallpaper mode functions (no native compilation required!)
 function enableWallpaperMode() {
@@ -31,7 +32,7 @@ function enableWallpaperMode() {
 
     // Use Electron's built-in methods for wallpaper-like behavior
     mainWindow.setAlwaysOnTop(false);
-    mainWindow.setSkipTaskbar(false);
+    mainWindow.setSkipTaskbar(true);
 
     // Move to background and make it behave like wallpaper
     mainWindow.blur();
@@ -173,20 +174,11 @@ async function deleteIconFile(iconPath) {
 }
 
 function createWindow() {
-  // Get FULL screen dimensions (not just work area - we want fullscreen!)
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.bounds; // Changed from workAreaSize to bounds for true fullscreen
-  const { x, y } = primaryDisplay.bounds;
-
-  // Create the browser window with FULLSCREEN settings (allows apps on top)
+  // Create the browser window - let fullscreen handle the sizing
   mainWindow = new BrowserWindow({
-    x: 0, // Always start at 0,0 for fullscreen
-    y: 0,
-    width: width,
-    height: height,
     frame: false,
-    fullscreen: true,               // FIXED: Use fullscreen (hides taskbar) but NOT kiosk (allows apps on top)
-    simpleFullscreen: false,        // Use real fullscreen (not simple mode)
+    fullscreen: true,               // True fullscreen mode (hides taskbar)
+    kiosk: false,                   // Not kiosk mode (allows other apps on top)
     webPreferences: {
       nodeIntegration: false,        // SECURE: Disable node integration
       contextIsolation: true,        // SECURE: Enable context isolation
@@ -202,7 +194,7 @@ function createWindow() {
     maximizable: false,             // Disable maximize
     closable: true,                 // Allow closing (but only via admin)
     alwaysOnTop: false,             // FIXED: Allow other apps to appear on top
-    skipTaskbar: false,             // FIXED: Show in taskbar so apps can appear on top
+    skipTaskbar: true,              // Hide from Windows taskbar
     autoHideMenuBar: true,          // Hide menu bar
     hasShadow: false                // Remove window shadow
   });
@@ -243,18 +235,23 @@ function createWindow() {
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
+    // Force fullscreen before showing
+    mainWindow.setFullScreen(true);
     mainWindow.show();
 
-    // FIXED: Fullscreen mode (hides taskbar) but allows other apps on top
-    console.log('✅ Window shown in FULLSCREEN MODE (taskbar hidden, apps can appear on top)');
+    console.log('✅ Window shown in FULLSCREEN MODE');
 
-    // Reinforce fullscreen to ensure taskbar stays hidden
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
+    // Reinforce fullscreen multiple times to ensure it sticks
+    const reinforceFullscreen = () => {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFullScreen()) {
         mainWindow.setFullScreen(true);
-        console.log('✅ Fullscreen mode reinforced - taskbar hidden, apps can show on top');
+        console.log('✅ Fullscreen mode reinforced');
       }
-    }, 500);
+    };
+
+    setTimeout(reinforceFullscreen, 100);
+    setTimeout(reinforceFullscreen, 500);
+    setTimeout(reinforceFullscreen, 1000);
   });
 
   // FIXED: Simplified close handling - only prevent accidental closes, not button closes
@@ -656,24 +653,17 @@ function closeApp() {
   }
 }
 
-// FIXED: Force close function (already working)
+// FIXED: Force close function - INSTANT
 function forceCloseApp() {
-  console.log('🔴 forceCloseApp() called');
+  console.log('🔴 forceCloseApp() - INSTANT EXIT');
   shouldClose = true;
-  
+
   if (mainWindow && !mainWindow.isDestroyed()) {
-    console.log('🔴 Force destroying main window...');
     mainWindow.destroy();
   }
-  
-  console.log('🔴 Force quitting app...');
-  app.quit();
-  
-  // Nuclear option - force exit
-  setTimeout(() => {
-    console.log('🔴 Nuclear option - process.exit()');
-    process.exit(0);
-  }, 500);
+
+  // Use app.exit() for instant termination (no cleanup, immediate)
+  app.exit(0);
 }
 
 // PC info IPC handlers
@@ -855,6 +845,79 @@ ipcMain.handle('install-rustdesk', async () => {
     
   } catch (error) {
     console.error('❌ RustDesk installation error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Install Remotely agent handler (Windows only)
+ipcMain.handle('install-remotely', async () => {
+  console.log('🚀 Installing Remotely agent...');
+
+  if (process.platform !== 'win32') {
+    return { success: false, error: 'Remotely is only supported on Windows' };
+  }
+
+  try {
+    // PowerShell command to download and run the Remotely installer
+    const powershellCommand = `
+      Invoke-WebRequest -Uri 'https://remotely.oth.zone/api/ClientDownloads/WindowsInstaller/613dd6f8-787a-4ebe-8e47-6d0675787703' -OutFile "\${env:TEMP}\\Install-Remotely.ps1" -UseBasicParsing;
+      Start-Process -FilePath 'powershell.exe' -ArgumentList ('-executionpolicy', 'bypass', '-f', "\${env:TEMP}\\Install-Remotely.ps1") -Verb RunAs
+    `;
+
+    return new Promise((resolve, reject) => {
+      const installer = spawn('powershell.exe', [
+        '-ExecutionPolicy', 'Bypass',
+        '-Command', powershellCommand
+      ], {
+        stdio: 'pipe',
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+      let stdOutput = '';
+
+      installer.stdout.on('data', (data) => {
+        stdOutput += data.toString();
+        console.log('Remotely stdout:', data.toString());
+      });
+
+      installer.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+        console.log('Remotely stderr:', data.toString());
+      });
+
+      installer.on('close', (code) => {
+        console.log(`Remotely installer exit code: ${code}`);
+
+        if (code === 0) {
+          console.log('✅ Remotely installation started successfully');
+          resolve({
+            success: true,
+            message: 'Remotely installation started. Please complete the UAC prompt if shown.'
+          });
+        } else {
+          console.error(`❌ Remotely installation failed with code: ${code}`);
+          resolve({
+            success: false,
+            error: `Installation failed with exit code: ${code}. ${errorOutput || 'Unknown error'}`
+          });
+        }
+      });
+
+      installer.on('error', (error) => {
+        console.error('❌ Remotely installation error:', error);
+        resolve({
+          success: false,
+          error: error.message
+        });
+      });
+    });
+
+  } catch (error) {
+    console.error('❌ Remotely installation error:', error);
     return {
       success: false,
       error: error.message
@@ -1271,45 +1334,6 @@ ipcMain.handle('set-desktop-mode', async (event, enabled) => {
   }
 });
 
-// NEW: Screen capture sources for screen sharing
-ipcMain.handle('get-desktop-sources', async () => {
-  try {
-    console.log('📺 Getting desktop capture sources...');
-    const sources = await desktopCapturer.getSources({
-      types: ['screen', 'window'],
-      thumbnailSize: { width: 0, height: 0 } // Don't generate thumbnails - too large for IPC
-    });
-
-    console.log(`✅ Found ${sources.length} sources`);
-
-    // Filter out non-capturable sources and return only essential data
-    const capturableSources = sources
-      .filter(source => {
-        // Filter out non-capturable windows
-        const name = source.name.toLowerCase();
-        // Skip Windows system dialogs and protected windows
-        if (name.includes('task switching') ||
-            name.includes('program manager') ||
-            name.includes('settings') ||
-            source.id.includes('window:0:0')) {
-          return false;
-        }
-        return true;
-      })
-      .map(source => ({
-        id: source.id,
-        name: source.name,
-        // Don't send thumbnail - too large for IPC
-      }));
-
-    console.log(`✅ Returning ${capturableSources.length} capturable sources`);
-    return capturableSources;
-  } catch (error) {
-    console.error('❌ Error getting desktop sources:', error);
-    throw error;
-  }
-});
-
 // NEW: Get open windows for taskbar
 ipcMain.handle('get-open-windows', async () => {
   try {
@@ -1320,34 +1344,26 @@ ipcMain.handle('get-open-windows', async () => {
       return [];
     }
 
-    // Use PowerShell to get visible windows
+    // Use PowerShell to get visible windows with executable paths
     const powershellScript = `
-      Add-Type @"
-      using System;
-      using System.Runtime.InteropServices;
-      using System.Text;
-      public class Win32 {
-          [DllImport("user32.dll")]
-          public static extern bool IsWindowVisible(IntPtr hWnd);
-
-          [DllImport("user32.dll")]
-          public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-
-          [DllImport("user32.dll", SetLastError=true)]
-          public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-      }
-"@
-
       Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | ForEach-Object {
           $processId = $_.Id
           $processName = $_.ProcessName
           $windowTitle = $_.MainWindowTitle
+          $exePath = ""
+
+          try {
+              $exePath = $_.Path
+          } catch {
+              $exePath = ""
+          }
 
           # Output as JSON
           @{
               processId = $processId
               processName = $processName
               windowTitle = $windowTitle
+              exePath = $exePath
           } | ConvertTo-Json -Compress
       }
     `;
@@ -1394,7 +1410,10 @@ ipcMain.handle('get-open-windows', async () => {
                 if (windowInfo.windowTitle &&
                     !windowInfo.windowTitle.includes('Shortcut Launcher') &&
                     windowInfo.processName !== 'electron') {
-                  windows.push(windowInfo);
+                  windows.push({
+                    ...windowInfo,
+                    exePath: windowInfo.exePath || ''
+                  });
                 }
               } catch (parseError) {
                 console.log('Failed to parse line:', line);
@@ -1504,11 +1523,173 @@ ipcMain.handle('focus-window', async (event, processId) => {
   }
 });
 
+// NEW: Extract icon from process executable
+ipcMain.handle('get-process-icon', async (event, exePath) => {
+  try {
+    if (!exePath) {
+      return null;
+    }
+
+    // Check cache first
+    if (processIconCache.has(exePath)) {
+      return processIconCache.get(exePath);
+    }
+
+    // Check if file exists
+    if (!await fs.pathExists(exePath)) {
+      return null;
+    }
+
+    // Extract icon from executable
+    const icon = await app.getFileIcon(exePath, { size: 'large' });
+    const iconBuffer = icon.toPNG();
+
+    // Resize to 32x32 for taskbar
+    let resizedBuffer = iconBuffer;
+    if (sharpAvailable) {
+      try {
+        const sharp = require('sharp');
+        resizedBuffer = await sharp(iconBuffer)
+          .resize(32, 32, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .png()
+          .toBuffer();
+      } catch (e) {
+        // Use original if resize fails
+      }
+    }
+
+    // Convert to base64 data URL
+    const base64Icon = `data:image/png;base64,${resizedBuffer.toString('base64')}`;
+
+    // Cache it
+    processIconCache.set(exePath, base64Icon);
+
+    return base64Icon;
+  } catch (error) {
+    console.error('Error extracting process icon:', error.message);
+    return null;
+  }
+});
+
+// Download update from GitHub
+ipcMain.handle('download-update', async (event, downloadUrl, fileName) => {
+  try {
+    console.log('📥 Downloading update from:', downloadUrl);
+
+    const https = require('https');
+    const http = require('http');
+    const downloadsPath = app.getPath('downloads');
+    const filePath = path.join(downloadsPath, fileName);
+
+    return new Promise((resolve, reject) => {
+      const protocol = downloadUrl.startsWith('https') ? https : http;
+
+      const request = protocol.get(downloadUrl, {
+        headers: { 'User-Agent': 'Shortcut-Launcher-Updater' }
+      }, (response) => {
+        // Handle redirects
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          const redirectUrl = response.headers.location;
+          console.log('📥 Redirecting to:', redirectUrl);
+
+          const redirectProtocol = redirectUrl.startsWith('https') ? https : http;
+          redirectProtocol.get(redirectUrl, {
+            headers: { 'User-Agent': 'Shortcut-Launcher-Updater' }
+          }, (redirectResponse) => {
+            const file = require('fs').createWriteStream(filePath);
+            redirectResponse.pipe(file);
+
+            file.on('finish', () => {
+              file.close();
+              console.log('✅ Download complete:', filePath);
+              resolve({ success: true, filePath });
+            });
+          }).on('error', (err) => {
+            reject({ success: false, error: err.message });
+          });
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject({ success: false, error: `HTTP ${response.statusCode}` });
+          return;
+        }
+
+        const file = require('fs').createWriteStream(filePath);
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          console.log('✅ Download complete:', filePath);
+          resolve({ success: true, filePath });
+        });
+      });
+
+      request.on('error', (err) => {
+        console.error('❌ Download error:', err);
+        reject({ success: false, error: err.message });
+      });
+
+      request.setTimeout(60000, () => {
+        request.destroy();
+        reject({ success: false, error: 'Download timeout' });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Download update error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Install update (run the downloaded file)
+ipcMain.handle('install-update', async (event, filePath) => {
+  try {
+    console.log('📦 Installing update from:', filePath);
+
+    // Check if file exists
+    if (!await fs.pathExists(filePath)) {
+      return { success: false, error: 'Update file not found' };
+    }
+
+    // Run the installer
+    const { exec } = require('child_process');
+
+    if (filePath.endsWith('.exe') || filePath.endsWith('.msi')) {
+      // Run installer and quit app
+      exec(`start "" "${filePath}"`, (error) => {
+        if (error) {
+          console.error('❌ Failed to start installer:', error);
+          return;
+        }
+        // Quit app after starting installer
+        setTimeout(() => {
+          app.exit(0);
+        }, 1000);
+      });
+
+      return { success: true, message: 'Installer started' };
+    } else if (filePath.endsWith('.zip')) {
+      // Open the downloads folder for manual extraction
+      shell.showItemInFolder(filePath);
+      return { success: true, message: 'Downloaded to folder' };
+    } else {
+      shell.showItemInFolder(filePath);
+      return { success: true, message: 'File downloaded' };
+    }
+  } catch (error) {
+    console.error('❌ Install update error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Prevent navigation away from app
 app.on('web-contents-created', (event, contents) => {
   contents.on('will-navigate', (event, navigationUrl) => {
     const parsedUrl = new URL(navigationUrl);
-    
+
     if (parsedUrl.origin !== 'file://') {
       event.preventDefault();
     }
