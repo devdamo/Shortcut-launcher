@@ -63,7 +63,27 @@ try {
 
     // NEW: Auto-update functionality
     downloadUpdate: (url, fileName) => ipcRenderer.invoke('download-update', url, fileName),
-    installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath)
+    installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath),
+
+    // Server connection
+    serverConnect: (url) => ipcRenderer.invoke('server-connect', url),
+    serverDisconnect: () => ipcRenderer.invoke('server-disconnect'),
+    serverStatus: () => ipcRenderer.invoke('server-status'),
+    serverTest: (url) => ipcRenderer.invoke('server-test', url),
+
+    // Server event listeners
+    onServerAddShortcut: (callback) => ipcRenderer.on('server-add-shortcut', (event, data) => callback(data)),
+    onServerRemoveShortcut: (callback) => ipcRenderer.on('server-remove-shortcut', (event, id) => callback(id)),
+    onServerSyncSettings: (callback) => ipcRenderer.on('server-sync-settings', () => callback()),
+    onServerCustomCommand: (callback) => ipcRenderer.on('server-custom-command', (event, data) => callback(data)),
+
+    // Screen share event listeners
+    onScreenShareSession: (callback) => ipcRenderer.on('screenshare-session', callback),
+    onScreenShareOffer: (callback) => ipcRenderer.on('screenshare-offer', callback),
+    onScreenShareIce: (callback) => ipcRenderer.on('screenshare-ice', callback),
+
+    // Screen share actions (send data back to server)
+    sendScreenShareAnswer: (data) => ipcRenderer.invoke('screenshare-answer', data)
   });
   
   console.log('✅ electronAPI exposed successfully');

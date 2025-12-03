@@ -73,6 +73,11 @@ class ShortcutLauncher {
             this.startTaskbar();
             console.log('✅ Taskbar started');
 
+            // Step 7: Set up server command listeners
+            console.log('Step 7: Setting up server command listeners...');
+            this.setupServerListeners();
+            console.log('✅ Server listeners set up');
+
         } catch (error) {
             console.error('❌ CRITICAL ERROR in init():', error);
             this.showLoading(false);
@@ -922,17 +927,25 @@ class ShortcutLauncher {
         const saveBtn = document.getElementById('save-server-btn');
         const testBtn = document.getElementById('test-server-btn');
 
-        // Load saved domain from localStorage
-        const savedDomain = localStorage.getItem('server-domain') || '';
-        if (domainInput) {
-            domainInput.value = savedDomain;
-        }
+        // Get current server status from electron
+        try {
+            const serverStatus = await window.electronAPI.serverStatus();
+            if (serverStatus.serverUrl) {
+                domainInput.value = serverStatus.serverUrl;
+            }
 
-        // Update status based on whether domain is configured
-        if (savedDomain) {
-            statusEl.textContent = 'Configured';
-            statusEl.className = 'info-value status-badge connected';
-        } else {
+            if (serverStatus.connected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'info-value status-badge connected';
+            } else if (serverStatus.serverUrl) {
+                statusEl.textContent = 'Configured (Offline)';
+                statusEl.className = 'info-value status-badge disconnected';
+            } else {
+                statusEl.textContent = 'Not configured';
+                statusEl.className = 'info-value status-badge disconnected';
+            }
+        } catch (error) {
+            console.error('Error getting server status:', error);
             statusEl.textContent = 'Not configured';
             statusEl.className = 'info-value status-badge disconnected';
         }
@@ -957,19 +970,41 @@ class ShortcutLauncher {
             dbStatusEl.className = 'info-value status-badge disconnected';
         }
 
-        // Add save button handler
+        // Add save button handler - connects to server
         if (saveBtn && !saveBtn.hasAttribute('data-handler-added')) {
             saveBtn.setAttribute('data-handler-added', 'true');
-            saveBtn.addEventListener('click', () => {
+            saveBtn.addEventListener('click', async () => {
                 const domain = domainInput.value.trim();
-                localStorage.setItem('server-domain', domain);
-                if (domain) {
-                    statusEl.textContent = 'Saved';
-                    statusEl.className = 'info-value status-badge connected';
-                } else {
+
+                if (!domain) {
+                    // Disconnect from server
+                    await window.electronAPI.serverDisconnect();
                     statusEl.textContent = 'Not configured';
                     statusEl.className = 'info-value status-badge disconnected';
+                    return;
                 }
+
+                saveBtn.textContent = 'Connecting...';
+                saveBtn.disabled = true;
+                statusEl.textContent = 'Connecting...';
+                statusEl.className = 'info-value status-badge';
+
+                try {
+                    const result = await window.electronAPI.serverConnect(domain);
+                    if (result.success) {
+                        statusEl.textContent = 'Connected';
+                        statusEl.className = 'info-value status-badge connected';
+                    } else {
+                        statusEl.textContent = result.message || 'Connection failed';
+                        statusEl.className = 'info-value status-badge disconnected';
+                    }
+                } catch (error) {
+                    statusEl.textContent = 'Connection error';
+                    statusEl.className = 'info-value status-badge disconnected';
+                }
+
+                saveBtn.textContent = 'Save';
+                saveBtn.disabled = false;
             });
         }
 
@@ -990,11 +1025,16 @@ class ShortcutLauncher {
                 statusEl.className = 'info-value status-badge';
 
                 try {
-                    const response = await fetch(domain, { method: 'HEAD', mode: 'no-cors' });
-                    statusEl.textContent = 'Reachable';
-                    statusEl.className = 'info-value status-badge connected';
+                    const result = await window.electronAPI.serverTest(domain);
+                    if (result.success) {
+                        statusEl.textContent = 'Reachable';
+                        statusEl.className = 'info-value status-badge connected';
+                    } else {
+                        statusEl.textContent = result.message || 'Unreachable';
+                        statusEl.className = 'info-value status-badge disconnected';
+                    }
                 } catch (error) {
-                    statusEl.textContent = 'Unreachable';
+                    statusEl.textContent = 'Test failed';
                     statusEl.className = 'info-value status-badge disconnected';
                 }
 
@@ -2322,6 +2362,68 @@ class ShortcutLauncher {
             // Fallback to emoji on error
             iconContainer.textContent = shortcut.type === 'website' ? '🌐' : '💻';
         }
+    }
+
+    // Set up listeners for server commands
+    setupServerListeners() {
+        if (!window.electronAPI) {
+            console.warn('electronAPI not available, skipping server listeners');
+            return;
+        }
+
+        // Listen for add shortcut command from server
+        window.electronAPI.onServerAddShortcut(async (data) => {
+            console.log('📬 Server command: Add shortcut', data);
+            try {
+                if (data.name && data.path && data.type) {
+                    await this.saveShortcut({
+                        name: data.name,
+                        path: data.path,
+                        type: data.type,
+                        icon_path: data.iconPath || null
+                    });
+                    await this.loadShortcuts();
+                    console.log('✅ Shortcut added from server command');
+                }
+            } catch (error) {
+                console.error('❌ Error adding shortcut from server:', error);
+            }
+        });
+
+        // Listen for remove shortcut command from server
+        window.electronAPI.onServerRemoveShortcut(async (id) => {
+            console.log('📬 Server command: Remove shortcut', id);
+            try {
+                await this.deleteShortcut(id);
+                console.log('✅ Shortcut removed from server command');
+            } catch (error) {
+                console.error('❌ Error removing shortcut from server:', error);
+            }
+        });
+
+        // Listen for sync settings command from server
+        window.electronAPI.onServerSyncSettings(async () => {
+            console.log('📬 Server command: Sync settings');
+            try {
+                await this.loadBackgroundSettings();
+                console.log('✅ Settings synced from server command');
+            } catch (error) {
+                console.error('❌ Error syncing settings from server:', error);
+            }
+        });
+
+        // Listen for custom commands from server
+        window.electronAPI.onServerCustomCommand(async (data) => {
+            console.log('📬 Server command: Custom', data);
+            // Handle custom commands as needed
+            if (data.action === 'refresh') {
+                await this.loadShortcuts();
+            } else if (data.action === 'message') {
+                this.showMessage(data.message || 'Message from server');
+            }
+        });
+
+        console.log('✅ Server command listeners registered');
     }
 
     escapeHtml(text) {

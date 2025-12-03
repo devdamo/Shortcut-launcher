@@ -10,6 +10,7 @@ const crypto = require('crypto');
 console.log('🎮 Pure Electron wallpaper mode loaded - no compilation needed!');
 
 let mainWindow;
+let screenShareWindow = null; // Screen share viewer window
 let sharpAvailable = false;
 let shouldClose = false;
 let dbConnection = null;
@@ -18,6 +19,15 @@ let isDbConnected = false;
 let isWallpaperMode = false;
 let iconsDir = null; // Directory for storing icons locally
 let processIconCache = new Map(); // Cache for process icons
+
+// Server connection variables
+let serverUrl = null;
+let clientId = null;
+let heartbeatInterval = null;
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+
+// Screen share session info
+let currentScreenShareSession = null;
 
 // Pure Electron wallpaper mode functions (no native compilation required!)
 function enableWallpaperMode() {
@@ -453,6 +463,12 @@ async function initializePCTables() {
     `);
 
     console.log(`✅ Initialized tables for PC: ${pcInfo.hostname}`);
+
+    // Load server settings and auto-connect
+    setTimeout(() => {
+      loadServerSettings();
+    }, 500);
+
     return true;
   } catch (error) {
     console.error('❌ Error initializing PC tables:', error);
@@ -560,6 +576,377 @@ async function downloadFile(url, outputPath, options = {}) {
     request.end();
   });
 }
+
+// ============================================================
+// SERVER CONNECTION FUNCTIONS
+// ============================================================
+
+// Make HTTP request to server
+async function serverRequest(endpoint, method = 'GET', body = null) {
+  if (!serverUrl) {
+    console.log('⚠️ Server URL not configured');
+    return null;
+  }
+
+  const url = `${serverUrl}${endpoint}`;
+  console.log(`🌐 Server request: ${method} ${url}`);
+
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const http = require('http');
+    const urlObj = new URL(url);
+    const protocol = urlObj.protocol === 'https:' ? https : http;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Shortcut-Launcher'
+      },
+      timeout: 10000
+    };
+
+    const req = protocol.request(options, (res) => {
+      let data = '';
+
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(JSON.parse(data));
+          } else {
+            console.error(`❌ Server responded with ${res.statusCode}:`, data);
+            resolve(null);
+          }
+        } catch (e) {
+          console.error('❌ Failed to parse server response:', e.message);
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      console.error('❌ Server request error:', error.message);
+      resolve(null);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      console.error('❌ Server request timeout');
+      resolve(null);
+    });
+
+    if (body) {
+      req.write(JSON.stringify(body));
+    }
+
+    req.end();
+  });
+}
+
+// Register client with server
+async function registerWithServer() {
+  if (!serverUrl || !pcInfo) {
+    console.log('⚠️ Cannot register: server URL or PC info not available');
+    return false;
+  }
+
+  console.log('📡 Registering with server...');
+
+  const packageJson = require('../package.json');
+
+  const response = await serverRequest('/api/clients', 'POST', {
+    name: pcInfo.hostname,
+    hostname: pcInfo.hostname,
+    ipAddress: null, // Could add IP detection later
+    version: packageJson.version
+  });
+
+  if (response && response.id) {
+    clientId = response.id;
+    console.log(`✅ Registered with server. Client ID: ${clientId}`);
+    return true;
+  }
+
+  console.error('❌ Failed to register with server');
+  return false;
+}
+
+// Send heartbeat and get pending commands
+async function sendHeartbeat() {
+  if (!serverUrl || !clientId) {
+    return;
+  }
+
+  console.log('💓 Sending heartbeat...');
+
+  const packageJson = require('../package.json');
+
+  const response = await serverRequest(`/api/clients/${clientId}`, 'PUT', {
+    version: packageJson.version
+  });
+
+  if (response) {
+    console.log('✅ Heartbeat sent');
+
+    // Process any pending commands
+    if (response.commands && response.commands.length > 0) {
+      console.log(`📬 Received ${response.commands.length} commands`);
+      for (const command of response.commands) {
+        await executeCommand(command);
+      }
+    }
+  }
+}
+
+// Execute a command from the server
+async function executeCommand(command) {
+  console.log(`⚡ Executing command: ${command.type}`);
+
+  try {
+    switch (command.type) {
+      case 'OPEN_SHORTCUT':
+        if (command.payload && command.payload.path) {
+          const isUrl = command.payload.type === 'website';
+          if (isUrl) {
+            await require('electron').shell.openExternal(command.payload.path);
+          } else {
+            await require('electron').shell.openPath(command.payload.path);
+          }
+          console.log(`✅ Opened shortcut: ${command.payload.path}`);
+        }
+        break;
+
+      case 'ADD_SHORTCUT':
+        if (command.payload && mainWindow) {
+          mainWindow.webContents.send('server-add-shortcut', command.payload);
+          console.log(`✅ Add shortcut command sent to renderer`);
+        }
+        break;
+
+      case 'REMOVE_SHORTCUT':
+        if (command.payload && command.payload.id && mainWindow) {
+          mainWindow.webContents.send('server-remove-shortcut', command.payload.id);
+          console.log(`✅ Remove shortcut command sent to renderer`);
+        }
+        break;
+
+      case 'UPDATE_SETTINGS':
+        if (mainWindow) {
+          mainWindow.webContents.send('server-sync-settings');
+          console.log(`✅ Settings sync command sent to renderer`);
+        }
+        break;
+
+      case 'RESTART_APP':
+        console.log('🔄 Restarting app...');
+        app.relaunch();
+        app.exit(0);
+        break;
+
+      case 'SHUTDOWN':
+        console.log('🔌 Shutting down app...');
+        forceCloseApp();
+        break;
+
+      case 'CUSTOM':
+        if (command.payload && mainWindow) {
+          mainWindow.webContents.send('server-custom-command', command.payload);
+          console.log(`✅ Custom command sent to renderer`);
+        }
+        break;
+
+      case 'SCREEN_SHARE_START':
+        if (command.payload) {
+          console.log(`📺 Screen share start command received`);
+          createScreenShareWindow(
+            command.payload.sessionId,
+            command.payload.includeAudio
+          );
+        }
+        break;
+
+      case 'SCREEN_SHARE_STOP':
+        console.log(`📺 Screen share stop command received`);
+        closeScreenShareWindow();
+        break;
+
+      case 'SCREEN_SHARE_OFFER':
+        if (command.payload && screenShareWindow && !screenShareWindow.isDestroyed()) {
+          screenShareWindow.webContents.send('screenshare-offer', command.payload);
+          console.log(`📺 Screen share offer forwarded to viewer`);
+        }
+        break;
+
+      case 'SCREEN_SHARE_ICE':
+        if (command.payload && screenShareWindow && !screenShareWindow.isDestroyed()) {
+          screenShareWindow.webContents.send('screenshare-ice', command.payload);
+          console.log(`📺 ICE candidate forwarded to viewer`);
+        }
+        break;
+
+      default:
+        console.log(`⚠️ Unknown command type: ${command.type}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error executing command ${command.type}:`, error);
+  }
+}
+
+// Start heartbeat interval
+function startHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+
+  // Send initial heartbeat
+  sendHeartbeat();
+
+  // Set up interval
+  heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+  console.log(`💓 Heartbeat started (every ${HEARTBEAT_INTERVAL / 1000}s)`);
+}
+
+// Stop heartbeat interval
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+    console.log('💔 Heartbeat stopped');
+  }
+}
+
+// Connect to server (called after getting server URL from settings)
+async function connectToServer() {
+  if (!serverUrl) {
+    console.log('⚠️ No server URL configured');
+    return false;
+  }
+
+  console.log(`🌐 Connecting to server: ${serverUrl}`);
+
+  const registered = await registerWithServer();
+  if (registered) {
+    startHeartbeat();
+    return true;
+  }
+
+  return false;
+}
+
+// ============================================================
+// END SERVER CONNECTION FUNCTIONS
+// ============================================================
+
+// ============================================================
+// SCREEN SHARE FUNCTIONS
+// ============================================================
+
+// Create screen share viewer window
+function createScreenShareWindow(sessionId, includeAudio) {
+  if (screenShareWindow && !screenShareWindow.isDestroyed()) {
+    console.log('📺 Screen share window already exists, focusing...');
+    screenShareWindow.focus();
+    return;
+  }
+
+  console.log('📺 Creating screen share viewer window...');
+
+  // Get primary display dimensions
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
+  screenShareWindow = new BrowserWindow({
+    width: Math.floor(width * 0.8),
+    height: Math.floor(height * 0.8),
+    minWidth: 640,
+    minHeight: 480,
+    frame: true,
+    title: 'Screen Share - Receiving...',
+    backgroundColor: '#000000',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, '..', 'preload.js'),
+      sandbox: false
+    },
+    show: false,
+    center: true
+  });
+
+  // Store session info
+  currentScreenShareSession = {
+    sessionId,
+    includeAudio
+  };
+
+  // Load the screen share viewer HTML
+  screenShareWindow.loadFile(path.join(__dirname, '..', 'renderer', 'screenshare-viewer.html'));
+
+  // Show when ready
+  screenShareWindow.once('ready-to-show', () => {
+    screenShareWindow.show();
+    screenShareWindow.focus();
+    console.log('📺 Screen share viewer window opened');
+
+    // Send session info to the viewer
+    screenShareWindow.webContents.send('screenshare-session', {
+      sessionId,
+      includeAudio,
+      serverUrl
+    });
+  });
+
+  // Handle window close
+  screenShareWindow.on('closed', () => {
+    console.log('📺 Screen share viewer window closed');
+    screenShareWindow = null;
+    currentScreenShareSession = null;
+  });
+}
+
+// Close screen share window
+function closeScreenShareWindow() {
+  if (screenShareWindow && !screenShareWindow.isDestroyed()) {
+    console.log('📺 Closing screen share viewer window...');
+    screenShareWindow.close();
+    screenShareWindow = null;
+    currentScreenShareSession = null;
+  }
+}
+
+// IPC handler for screen share answer (send back to server)
+ipcMain.handle('screenshare-answer', async (event, data) => {
+  if (!serverUrl || !currentScreenShareSession) {
+    console.log('⚠️ Cannot send screen share answer: no active session');
+    return { success: false };
+  }
+
+  try {
+    const response = await serverRequest('/api/screenshare', 'POST', {
+      action: data.type, // 'answer' or 'candidate'
+      sessionId: currentScreenShareSession.sessionId,
+      clientId: clientId,
+      answer: data.answer,
+      candidate: data.candidate
+    });
+
+    return { success: !!response };
+  } catch (error) {
+    console.error('❌ Error sending screen share answer:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ============================================================
+// END SCREEN SHARE FUNCTIONS
+// ============================================================
 
 // Helper function to resize image to ULTRA HIGH RESOLUTION with AI upscaling
 async function resizeImage(buffer, size = 512) { // INCREASED from 256 to 512!
@@ -1292,6 +1679,126 @@ ipcMain.handle('db-get-connection-status', async () => {
     tableName: pcInfo ? `shortcuts_${sanitizeTableName(pcInfo.hostname)}` : 'None'
   };
 });
+
+// ============================================================
+// SERVER IPC HANDLERS
+// ============================================================
+
+// Set server URL and connect
+ipcMain.handle('server-connect', async (event, url) => {
+  try {
+    if (!url) {
+      stopHeartbeat();
+      serverUrl = null;
+      clientId = null;
+      return { success: false, message: 'No URL provided' };
+    }
+
+    // Clean URL (remove trailing slash)
+    serverUrl = url.replace(/\/$/, '');
+    console.log(`🌐 Server URL set to: ${serverUrl}`);
+
+    // Save to database settings
+    if (isDbConnected && pcInfo) {
+      const settingsTableName = `settings_${sanitizeTableName(pcInfo.hostname)}`;
+      await dbConnection.execute(`
+        INSERT INTO ${settingsTableName} (setting_key, setting_value)
+        VALUES ('server_url', ?)
+        ON DUPLICATE KEY UPDATE
+          setting_value = VALUES(setting_value),
+          updated_at = CURRENT_TIMESTAMP
+      `, [serverUrl]);
+    }
+
+    // Try to connect
+    const connected = await connectToServer();
+    return {
+      success: connected,
+      message: connected ? 'Connected to server' : 'Failed to connect to server',
+      clientId: clientId
+    };
+  } catch (error) {
+    console.error('❌ Error connecting to server:', error);
+    return { success: false, message: error.message };
+  }
+});
+
+// Disconnect from server
+ipcMain.handle('server-disconnect', async () => {
+  stopHeartbeat();
+  serverUrl = null;
+  clientId = null;
+  return { success: true };
+});
+
+// Get server connection status
+ipcMain.handle('server-status', async () => {
+  return {
+    connected: !!clientId,
+    serverUrl: serverUrl,
+    clientId: clientId
+  };
+});
+
+// Test server connection
+ipcMain.handle('server-test', async (event, url) => {
+  try {
+    const testUrl = url.replace(/\/$/, '');
+    const https = require('https');
+    const http = require('http');
+    const urlObj = new URL(`${testUrl}/api/clients`);
+    const protocol = urlObj.protocol === 'https:' ? https : http;
+
+    return new Promise((resolve) => {
+      const req = protocol.get(urlObj, { timeout: 5000 }, (res) => {
+        resolve({
+          success: res.statusCode === 200,
+          status: res.statusCode,
+          message: res.statusCode === 200 ? 'Server is reachable' : `Server returned ${res.statusCode}`
+        });
+      });
+
+      req.on('error', (error) => {
+        resolve({ success: false, message: error.message });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ success: false, message: 'Connection timeout' });
+      });
+    });
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+});
+
+// Load server URL from settings on startup
+async function loadServerSettings() {
+  if (!isDbConnected || !pcInfo) return;
+
+  try {
+    const settingsTableName = `settings_${sanitizeTableName(pcInfo.hostname)}`;
+    const [rows] = await dbConnection.execute(`
+      SELECT setting_value FROM ${settingsTableName} WHERE setting_key = 'server_url'
+    `);
+
+    if (rows.length > 0 && rows[0].setting_value) {
+      serverUrl = rows[0].setting_value;
+      console.log(`🌐 Loaded server URL from settings: ${serverUrl}`);
+
+      // Auto-connect to server
+      setTimeout(() => {
+        connectToServer();
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('⚠️ Error loading server settings:', error.message);
+  }
+}
+
+// ============================================================
+// END SERVER IPC HANDLERS
+// ============================================================
 
 // NEW: Window mode control
 ipcMain.handle('set-desktop-mode', async (event, enabled) => {
