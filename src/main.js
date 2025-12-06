@@ -288,10 +288,52 @@ function createWindow() {
   }, 1000);
 }
 
+// Auto-start on boot configuration
+function setupAutoLaunch() {
+  // Enable auto-start on boot by default
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    openAsHidden: false, // Show window on startup
+    path: process.execPath,
+    args: []
+  });
+  console.log('✅ Auto-start on boot enabled');
+}
+
+// Get auto-launch status
+function getAutoLaunchStatus() {
+  const settings = app.getLoginItemSettings();
+  return settings.openAtLogin;
+}
+
+// Set auto-launch status
+function setAutoLaunch(enabled) {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    openAsHidden: false,
+    path: process.execPath,
+    args: []
+  });
+  console.log(`✅ Auto-start on boot ${enabled ? 'enabled' : 'disabled'}`);
+  return enabled;
+}
+
+// IPC handlers for auto-launch
+ipcMain.handle('get-auto-launch', async () => {
+  return getAutoLaunchStatus();
+});
+
+ipcMain.handle('set-auto-launch', async (event, enabled) => {
+  return setAutoLaunch(enabled);
+});
+
 // App event handlers
 app.whenReady().then(async () => {
   // Initialize icons directory first
   await initializeIconsDirectory();
+
+  // Setup auto-launch on boot
+  setupAutoLaunch();
 
   createWindow();
 });

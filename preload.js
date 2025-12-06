@@ -65,6 +65,10 @@ try {
     downloadUpdate: (url, fileName) => ipcRenderer.invoke('download-update', url, fileName),
     installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath),
 
+    // Auto-launch on boot
+    getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+    setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
+
     // Server connection
     serverConnect: (url) => ipcRenderer.invoke('server-connect', url),
     serverDisconnect: () => ipcRenderer.invoke('server-disconnect'),
