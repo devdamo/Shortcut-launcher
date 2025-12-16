@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, net, screen } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, nativeImage, net, screen } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 const os = require('os');
@@ -12,6 +12,7 @@ console.log('🎮 Pure Electron wallpaper mode loaded - no compilation needed!')
 
 let mainWindow;
 let screenShareWindow = null; // Screen share viewer window
+let embeddedWebView = null; // Embedded web browser view for websites
 let sharpAvailable = false;
 let shouldClose = false;
 let dbConnection = null;
@@ -105,6 +106,157 @@ function disableWallpaperMode() {
     return false;
   }
 }
+
+// ============================================================
+// EMBEDDED WEBVIEW FUNCTIONS
+// ============================================================
+
+// Open a URL in an embedded webview (instead of external browser)
+function openEmbeddedWebView(url) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('❌ Main window not available for embedded webview');
+    return false;
+  }
+
+  try {
+    console.log(`🌐 Opening embedded webview: ${url}`);
+
+    // Close existing webview if any
+    closeEmbeddedWebView();
+
+    // Get window bounds
+    const bounds = mainWindow.getBounds();
+    const topBarHeight = 50; // Height of the top bar with back button
+
+    // Create a new BrowserView
+    embeddedWebView = new BrowserView({
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        // Allow plugins for video playback
+        plugins: true
+      }
+    });
+
+    // Add the view to the window
+    mainWindow.setBrowserView(embeddedWebView);
+
+    // Set bounds (leave space at top for back button)
+    embeddedWebView.setBounds({
+      x: 0,
+      y: topBarHeight,
+      width: bounds.width,
+      height: bounds.height - topBarHeight
+    });
+
+    // Auto-resize with window
+    embeddedWebView.setAutoResize({
+      width: true,
+      height: true,
+      horizontal: false,
+      vertical: false
+    });
+
+    // Load the URL
+    embeddedWebView.webContents.loadURL(url);
+
+    // Handle new window requests (open in same view or block)
+    embeddedWebView.webContents.setWindowOpenHandler(({ url }) => {
+      console.log(`🔗 Embedded view navigation request: ${url}`);
+      // Load in the same view instead of opening new window
+      embeddedWebView.webContents.loadURL(url);
+      return { action: 'deny' };
+    });
+
+    // Notify renderer that webview is open
+    mainWindow.webContents.send('webview-opened', url);
+
+    console.log('✅ Embedded webview opened successfully');
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error opening embedded webview:', error);
+    return false;
+  }
+}
+
+// Close the embedded webview and return to launcher
+function closeEmbeddedWebView() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  try {
+    if (embeddedWebView) {
+      console.log('🔙 Closing embedded webview');
+
+      // Remove the view from the window
+      mainWindow.removeBrowserView(embeddedWebView);
+
+      // Destroy the view
+      embeddedWebView.webContents.destroy();
+      embeddedWebView = null;
+
+      // Notify renderer that webview is closed
+      mainWindow.webContents.send('webview-closed');
+
+      console.log('✅ Embedded webview closed');
+      return true;
+    }
+    return false;
+
+  } catch (error) {
+    console.error('❌ Error closing embedded webview:', error);
+    return false;
+  }
+}
+
+// Navigate back in the embedded webview
+function navigateBackEmbeddedWebView() {
+  if (embeddedWebView && embeddedWebView.webContents.canGoBack()) {
+    embeddedWebView.webContents.goBack();
+    return true;
+  }
+  return false;
+}
+
+// Navigate forward in the embedded webview
+function navigateForwardEmbeddedWebView() {
+  if (embeddedWebView && embeddedWebView.webContents.canGoForward()) {
+    embeddedWebView.webContents.goForward();
+    return true;
+  }
+  return false;
+}
+
+// Reload the embedded webview
+function reloadEmbeddedWebView() {
+  if (embeddedWebView) {
+    embeddedWebView.webContents.reload();
+    return true;
+  }
+  return false;
+}
+
+// Get embedded webview status
+function getEmbeddedWebViewStatus() {
+  if (!embeddedWebView) {
+    return { isOpen: false };
+  }
+
+  return {
+    isOpen: true,
+    url: embeddedWebView.webContents.getURL(),
+    title: embeddedWebView.webContents.getTitle(),
+    canGoBack: embeddedWebView.webContents.canGoBack(),
+    canGoForward: embeddedWebView.webContents.canGoForward()
+  };
+}
+
+// ============================================================
+// END EMBEDDED WEBVIEW FUNCTIONS
+// ============================================================
 
 // Check if sharp is available
 try {
@@ -649,13 +801,29 @@ async function executeCommand(command) {
       case 'OPEN_SHORTCUT':
         if (command.payload && command.payload.path) {
           const isUrl = command.payload.isUrl || command.payload.type === 'website';
+          // Check if we should use embedded view (default true for URLs)
+          const useEmbedded = command.payload.useEmbedded !== false;
+
           if (isUrl) {
-            await require('electron').shell.openExternal(command.payload.path);
+            if (useEmbedded) {
+              // Open in embedded webview (prevents users from closing browser)
+              openEmbeddedWebView(command.payload.path);
+              console.log(`✅ Opened URL in embedded webview: ${command.payload.path}`);
+            } else {
+              // Open in external browser (legacy behavior)
+              await require('electron').shell.openExternal(command.payload.path);
+              console.log(`✅ Opened URL in external browser: ${command.payload.path}`);
+            }
           } else {
             await require('electron').shell.openPath(command.payload.path);
+            console.log(`✅ Opened software: ${command.payload.path}`);
           }
-          console.log(`✅ Opened shortcut: ${command.payload.path}`);
         }
+        break;
+
+      case 'CLOSE_WEBVIEW':
+        closeEmbeddedWebView();
+        console.log(`✅ Closed embedded webview`);
         break;
 
       case 'ADD_SHORTCUT':
@@ -692,9 +860,37 @@ async function executeCommand(command) {
         break;
 
       case 'CUSTOM':
-        if (command.payload && mainWindow) {
-          mainWindow.webContents.send('server-custom-command', command.payload);
-          console.log(`✅ Custom command sent to renderer`);
+        if (command.payload) {
+          // Handle specific custom actions
+          if (command.payload.action === 'edit_shortcut') {
+            // Edit shortcut in database
+            try {
+              const { id, name, path, type } = command.payload;
+              if (isDbConnected && pcInfo) {
+                const tableName = `shortcuts_${pcInfo.hostname.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                await dbConnection.execute(
+                  `UPDATE \`${tableName}\` SET name = ?, path = ?, type = ? WHERE id = ?`,
+                  [name, path, type, id]
+                );
+                console.log(`✅ Shortcut ${id} updated: ${name}`);
+                // Notify renderer to refresh
+                mainWindow.webContents.send('server-custom-command', { action: 'refresh' });
+              }
+            } catch (error) {
+              console.error('❌ Error editing shortcut:', error);
+            }
+          } else if (command.payload.action === 'reboot') {
+            // Reboot PC
+            console.log('🔄 Rebooting PC...');
+            require('child_process').exec('shutdown /r /t 5');
+          } else if (command.payload.action === 'shutdown_pc') {
+            // Shutdown PC
+            console.log('⏻ Shutting down PC...');
+            require('child_process').exec('shutdown /s /t 5');
+          } else if (mainWindow) {
+            mainWindow.webContents.send('server-custom-command', command.payload);
+            console.log(`✅ Custom command sent to renderer`);
+          }
         }
         break;
 
@@ -1506,10 +1702,17 @@ ipcMain.handle('install-remotely', async () => {
 });
 
 // Shortcut operation IPC handlers
-ipcMain.handle('open-shortcut', async (event, shortcutPath, isUrl = false) => {
+// Modified to use embedded webview for URLs by default
+ipcMain.handle('open-shortcut', async (event, shortcutPath, isUrl = false, useEmbedded = true) => {
   try {
     if (isUrl) {
-      await shell.openExternal(shortcutPath);
+      if (useEmbedded) {
+        // Open in embedded webview (prevents users from closing browser)
+        return openEmbeddedWebView(shortcutPath);
+      } else {
+        // Open in external browser (legacy behavior)
+        await shell.openExternal(shortcutPath);
+      }
     } else {
       await shell.openPath(shortcutPath);
     }
@@ -1518,6 +1721,31 @@ ipcMain.handle('open-shortcut', async (event, shortcutPath, isUrl = false) => {
     console.error('Error opening shortcut:', error);
     return false;
   }
+});
+
+// Embedded webview IPC handlers
+ipcMain.handle('webview-open', async (event, url) => {
+  return openEmbeddedWebView(url);
+});
+
+ipcMain.handle('webview-close', async () => {
+  return closeEmbeddedWebView();
+});
+
+ipcMain.handle('webview-back', async () => {
+  return navigateBackEmbeddedWebView();
+});
+
+ipcMain.handle('webview-forward', async () => {
+  return navigateForwardEmbeddedWebView();
+});
+
+ipcMain.handle('webview-reload', async () => {
+  return reloadEmbeddedWebView();
+});
+
+ipcMain.handle('webview-status', async () => {
+  return getEmbeddedWebViewStatus();
 });
 
 // Icon extraction IPC handlers - NOW SAVES LOCALLY IN ULTRA HIGH RES

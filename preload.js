@@ -33,8 +33,20 @@ try {
     // NEW: Icon image browsing
     browseIconImage: () => ipcRenderer.invoke('browse-icon-image'),
 
-    // Shortcut operations
-    openShortcut: (path, isUrl) => ipcRenderer.invoke('open-shortcut', path, isUrl),
+    // Shortcut operations (useEmbedded: true opens URLs in embedded webview)
+    openShortcut: (path, isUrl, useEmbedded = true) => ipcRenderer.invoke('open-shortcut', path, isUrl, useEmbedded),
+
+    // Embedded webview controls
+    webviewOpen: (url) => ipcRenderer.invoke('webview-open', url),
+    webviewClose: () => ipcRenderer.invoke('webview-close'),
+    webviewBack: () => ipcRenderer.invoke('webview-back'),
+    webviewForward: () => ipcRenderer.invoke('webview-forward'),
+    webviewReload: () => ipcRenderer.invoke('webview-reload'),
+    webviewStatus: () => ipcRenderer.invoke('webview-status'),
+
+    // Webview event listeners
+    onWebviewOpened: (callback) => ipcRenderer.on('webview-opened', (event, url) => callback(url)),
+    onWebviewClosed: (callback) => ipcRenderer.on('webview-closed', () => callback()),
     
     // Icon extraction (now returns file path, not base64)
     extractWebsiteIcon: (url, shortcutName) => ipcRenderer.invoke('extract-website-icon', url, shortcutName),

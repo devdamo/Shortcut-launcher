@@ -91,6 +91,69 @@ body {
     border-color: #ffffff;
 }
 
+/* Webview Navigation Bar */
+.webview-nav-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    background: #1a1a1a;
+    border-bottom: 2px solid #333;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+}
+
+.webview-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.webview-nav-btn {
+    background-color: #333;
+    color: #ffffff;
+    border: 1px solid #555;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+}
+
+.webview-nav-btn:hover {
+    background-color: #444;
+    border-color: #777;
+}
+
+.webview-nav-btn:active {
+    background-color: #555;
+}
+
+.webview-close-btn {
+    background-color: #cc0000;
+    border-color: #ff0000;
+    margin-right: 10px;
+}
+
+.webview-close-btn:hover {
+    background-color: #ff0000;
+    border-color: #ff3333;
+}
+
+.webview-title {
+    flex: 1;
+    color: #aaa;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: 20px;
+}
 
 .rustdesk-btn {
     background-color: #ffffff;

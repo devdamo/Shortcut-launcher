@@ -8,12 +8,23 @@
 </head>
 <body>
     <!-- Top Bar with Add, Settings, Remotely and RustDesk buttons -->
-    <div class="top-bar">
+    <div class="top-bar" id="main-top-bar">
         <div class="top-bar-controls">
             <button id="add-shortcut-btn" class="control-btn add-btn">+</button>
             <button id="settings-btn" class="control-btn settings-btn">Settings</button>
             <button id="remotely-btn" class="control-btn remotely-btn">Remotely</button>
             <button id="rustdesk-btn" class="control-btn rustdesk-btn">RustDesk</button>
+        </div>
+    </div>
+
+    <!-- Webview Navigation Bar (shown when embedded webview is open) -->
+    <div class="webview-nav-bar" id="webview-nav-bar" style="display: none;">
+        <div class="webview-nav-controls">
+            <button id="webview-close-btn" class="webview-nav-btn webview-close-btn" title="Close & Return to Launcher">✕ Close</button>
+            <button id="webview-back-btn" class="webview-nav-btn" title="Go Back">◀</button>
+            <button id="webview-forward-btn" class="webview-nav-btn" title="Go Forward">▶</button>
+            <button id="webview-reload-btn" class="webview-nav-btn" title="Reload">↻</button>
+            <span id="webview-title" class="webview-title">Loading...</span>
         </div>
     </div>
 

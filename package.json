@@ -91,6 +91,7 @@
           ]
         }
       ],
+      "icon": "build/icon.png",
       "publisherName": "Shortcut Launcher Team",
       "verifyUpdateCodeSignature": false
     },

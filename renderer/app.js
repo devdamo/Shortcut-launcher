@@ -12,6 +12,7 @@ class ShortcutLauncher {
         this.taskbarRefreshInterval = null; // NEW: Track taskbar refresh interval
         this.openWindows = []; // NEW: Track open windows
         this.editingShortcutId = null; // NEW: Track which shortcut is being edited
+        this.webviewOpen = false; // Track if embedded webview is open
         this.init();
     }
 
@@ -77,6 +78,11 @@ class ShortcutLauncher {
             console.log('Step 7: Setting up server command listeners...');
             this.setupServerListeners();
             console.log('✅ Server listeners set up');
+
+            // Step 8: Set up webview listeners
+            console.log('Step 8: Setting up webview listeners...');
+            this.setupWebviewListeners();
+            console.log('✅ Webview listeners set up');
 
         } catch (error) {
             console.error('❌ CRITICAL ERROR in init():', error);
@@ -2426,6 +2432,95 @@ class ShortcutLauncher {
 
         console.log('✅ Server command listeners registered');
     }
+
+    // ============================================================
+    // EMBEDDED WEBVIEW METHODS
+    // ============================================================
+
+    setupWebviewListeners() {
+        if (!window.electronAPI) {
+            console.warn('electronAPI not available, skipping webview listeners');
+            return;
+        }
+
+        // Get webview nav bar elements
+        const webviewNavBar = document.getElementById('webview-nav-bar');
+        const mainTopBar = document.getElementById('main-top-bar');
+        const mainContent = document.querySelector('.main-content');
+        const closeBtn = document.getElementById('webview-close-btn');
+        const backBtn = document.getElementById('webview-back-btn');
+        const forwardBtn = document.getElementById('webview-forward-btn');
+        const reloadBtn = document.getElementById('webview-reload-btn');
+        const titleSpan = document.getElementById('webview-title');
+
+        // Close webview button
+        if (closeBtn) {
+            closeBtn.addEventListener('click', async () => {
+                console.log('🔙 Close webview button clicked');
+                await this.closeWebview();
+            });
+        }
+
+        // Back button
+        if (backBtn) {
+            backBtn.addEventListener('click', async () => {
+                await window.electronAPI.webviewBack();
+            });
+        }
+
+        // Forward button
+        if (forwardBtn) {
+            forwardBtn.addEventListener('click', async () => {
+                await window.electronAPI.webviewForward();
+            });
+        }
+
+        // Reload button
+        if (reloadBtn) {
+            reloadBtn.addEventListener('click', async () => {
+                await window.electronAPI.webviewReload();
+            });
+        }
+
+        // Listen for webview opened event from main process
+        window.electronAPI.onWebviewOpened((url) => {
+            console.log('🌐 Webview opened:', url);
+            this.webviewOpen = true;
+
+            // Show webview nav bar, hide main content
+            if (webviewNavBar) webviewNavBar.style.display = 'flex';
+            if (mainTopBar) mainTopBar.style.display = 'none';
+            if (mainContent) mainContent.style.display = 'none';
+            if (titleSpan) titleSpan.textContent = url;
+        });
+
+        // Listen for webview closed event from main process
+        window.electronAPI.onWebviewClosed(() => {
+            console.log('🔙 Webview closed');
+            this.webviewOpen = false;
+
+            // Hide webview nav bar, show main content
+            if (webviewNavBar) webviewNavBar.style.display = 'none';
+            if (mainTopBar) mainTopBar.style.display = '';
+            if (mainContent) mainContent.style.display = '';
+        });
+
+        console.log('✅ Webview listeners registered');
+    }
+
+    async closeWebview() {
+        try {
+            if (window.electronAPI && window.electronAPI.webviewClose) {
+                await window.electronAPI.webviewClose();
+            }
+        } catch (error) {
+            console.error('Error closing webview:', error);
+        }
+    }
+
+    // ============================================================
+    // END EMBEDDED WEBVIEW METHODS
+    // ============================================================
 
     escapeHtml(text) {
         const div = document.createElement('div');
