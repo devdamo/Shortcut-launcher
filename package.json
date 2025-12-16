@@ -1,6 +1,6 @@
 {
   "name": "shortcut-launcher",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Fullscreen shortcut launcher with software detection - Black & White Theme",
   "main": "src/main.js",
   "repository": {
