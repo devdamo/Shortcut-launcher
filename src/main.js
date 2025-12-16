@@ -1115,14 +1115,34 @@ ipcMain.handle('check-software-exists', async (event, softwarePath) => {
 });
 
 ipcMain.handle('browse-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    filters: [
+  // Platform-specific file filters
+  let filters;
+  if (process.platform === 'win32') {
+    filters = [
       { name: 'Executables', extensions: ['exe', 'lnk'] },
       { name: 'All Files', extensions: ['*'] }
-    ]
+    ];
+  } else if (process.platform === 'linux') {
+    filters = [
+      { name: 'Applications', extensions: ['desktop', 'sh', 'AppImage', 'appimage'] },
+      { name: 'All Files', extensions: ['*'] }
+    ];
+  } else if (process.platform === 'darwin') {
+    filters = [
+      { name: 'Applications', extensions: ['app', 'sh'] },
+      { name: 'All Files', extensions: ['*'] }
+    ];
+  } else {
+    filters = [
+      { name: 'All Files', extensions: ['*'] }
+    ];
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: filters
   });
-  
+
   return result.canceled ? null : result.filePaths[0];
 });
 
@@ -1190,15 +1210,114 @@ ipcMain.handle('browse-icon-image', async () => {
 // NEW: Install RustDesk handler
 ipcMain.handle('install-rustdesk', async () => {
   console.log('🚀 Installing RustDesk...');
-  
+
+  // Linux installation
+  if (process.platform === 'linux') {
+    try {
+      const arch = os.arch();
+      let rustdeskUrl;
+      let downloadPath;
+
+      if (arch === 'x64') {
+        rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.deb';
+        downloadPath = path.join(os.tmpdir(), 'rustdesk-installer.deb');
+      } else if (arch === 'arm64') {
+        rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-aarch64.deb';
+        downloadPath = path.join(os.tmpdir(), 'rustdesk-installer.deb');
+      } else {
+        return { success: false, error: `Unsupported architecture: ${arch}` };
+      }
+
+      console.log('📥 Downloading RustDesk from:', rustdeskUrl);
+      console.log('📁 Download path:', downloadPath);
+
+      // Download the file
+      await downloadFile(rustdeskUrl, downloadPath, {
+        timeout: 120000, // 2 minutes timeout
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
+        }
+      });
+
+      console.log('✅ Download completed, starting installation...');
+
+      // Install using pkexec for privilege escalation
+      return new Promise((resolve, reject) => {
+        const installer = spawn('pkexec', ['dpkg', '-i', downloadPath], {
+          stdio: 'pipe'
+        });
+
+        let errorOutput = '';
+        let stdOutput = '';
+
+        installer.stdout.on('data', (data) => {
+          stdOutput += data.toString();
+        });
+
+        installer.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        installer.on('close', (code) => {
+          // Clean up downloaded file
+          fs.unlink(downloadPath, (err) => {
+            if (err) console.log('Warning: Could not clean up installer file:', err.message);
+          });
+
+          console.log(`dpkg exit code: ${code}`);
+
+          if (code === 0) {
+            console.log('✅ RustDesk installation completed successfully');
+            resolve({
+              success: true,
+              message: 'RustDesk installed successfully!'
+            });
+          } else {
+            // Try to fix dependencies
+            console.log('⚠️ Attempting to fix dependencies...');
+            const fixDeps = spawn('pkexec', ['apt-get', 'install', '-f', '-y'], {
+              stdio: 'pipe'
+            });
+
+            fixDeps.on('close', (fixCode) => {
+              if (fixCode === 0) {
+                resolve({
+                  success: true,
+                  message: 'RustDesk installed successfully (dependencies fixed)!'
+                });
+              } else {
+                reject(new Error(`Installation failed. Please install manually: sudo dpkg -i ${downloadPath} && sudo apt-get install -f`));
+              }
+            });
+          }
+        });
+
+        installer.on('error', (error) => {
+          console.error('❌ Installation process error:', error);
+          fs.unlink(downloadPath, () => {});
+          reject(new Error(`Installation process failed: ${error.message}. Try: sudo dpkg -i <downloaded-file>`));
+        });
+      });
+
+    } catch (error) {
+      console.error('❌ RustDesk installation error (Linux):', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Windows installation
+  if (process.platform !== 'win32') {
+    return { success: false, error: 'RustDesk installation only supported on Windows and Linux' };
+  }
+
   try {
     const rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.msi';
     const tempDir = os.tmpdir();
     const downloadPath = path.join(tempDir, 'rustdesk-installer.msi');
-    
+
     console.log('📥 Downloading RustDesk from:', rustdeskUrl);
     console.log('📁 Download path:', downloadPath);
-    
+
     // Download the file
     await downloadFile(rustdeskUrl, downloadPath, {
       timeout: 60000, // 60 seconds timeout
@@ -1206,45 +1325,45 @@ ipcMain.handle('install-rustdesk', async () => {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
-    
+
     console.log('✅ Download completed, starting installation...');
-    
+
     // Execute the MSI installer with elevated privileges
     return new Promise((resolve, reject) => {
       // Use PowerShell to run the installer with elevated privileges
       const powershellCommand = `Start-Process -FilePath "msiexec.exe" -ArgumentList "/i","${downloadPath}","/quiet","/norestart" -Verb RunAs -Wait`;
-      
+
       const installer = spawn('powershell.exe', ['-Command', powershellCommand], {
         stdio: 'pipe',
         windowsHide: true
       });
-      
+
       let errorOutput = '';
       let stdOutput = '';
-      
+
       installer.stdout.on('data', (data) => {
         stdOutput += data.toString();
       });
-      
+
       installer.stderr.on('data', (data) => {
         errorOutput += data.toString();
       });
-      
+
       installer.on('close', (code) => {
         // Clean up downloaded file
         fs.unlink(downloadPath, (err) => {
           if (err) console.log('Warning: Could not clean up installer file:', err.message);
         });
-        
+
         console.log(`PowerShell exit code: ${code}`);
         console.log(`Stdout: ${stdOutput}`);
         console.log(`Stderr: ${errorOutput}`);
-        
+
         if (code === 0) {
           console.log('✅ RustDesk installation completed successfully');
-          resolve({ 
-            success: true, 
-            message: 'RustDesk installed successfully! You may need to restart your computer.' 
+          resolve({
+            success: true,
+            message: 'RustDesk installed successfully! You may need to restart your computer.'
           });
         } else {
           // Check for specific error conditions
@@ -1253,9 +1372,9 @@ ipcMain.handle('install-rustdesk', async () => {
           } else if (code === 1) {
             // Exit code 1 might still be success in some cases for PowerShell
             console.log('⚠️ PowerShell returned exit code 1, but this might be normal');
-            resolve({ 
-              success: true, 
-              message: 'RustDesk installation completed. Please check if it was installed successfully.' 
+            resolve({
+              success: true,
+              message: 'RustDesk installation completed. Please check if it was installed successfully.'
             });
           } else {
             console.error(`❌ Installation failed with exit code: ${code}`);
@@ -1263,7 +1382,7 @@ ipcMain.handle('install-rustdesk', async () => {
           }
         }
       });
-      
+
       installer.on('error', (error) => {
         console.error('❌ Installation process error:', error);
         // Clean up downloaded file
@@ -1425,10 +1544,86 @@ ipcMain.handle('extract-website-icon', async (event, url, shortcutName) => {
   }
 });
 
+// Helper function to parse Linux .desktop files
+async function parseDesktopFile(desktopPath) {
+  try {
+    const content = await fs.readFile(desktopPath, 'utf8');
+    const lines = content.split('\n');
+    const result = {};
+
+    for (const line of lines) {
+      if (line.includes('=')) {
+        const [key, ...valueParts] = line.split('=');
+        result[key.trim()] = valueParts.join('=').trim();
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.log('Could not parse .desktop file:', error.message);
+    return null;
+  }
+}
+
+// Helper function to find Linux icon by name
+async function findLinuxIcon(iconName) {
+  if (!iconName) return null;
+
+  // If it's already an absolute path, return it
+  if (path.isAbsolute(iconName) && await fs.pathExists(iconName)) {
+    return iconName;
+  }
+
+  // Common icon directories to search
+  const iconDirs = [
+    '/usr/share/icons/hicolor/512x512/apps',
+    '/usr/share/icons/hicolor/256x256/apps',
+    '/usr/share/icons/hicolor/128x128/apps',
+    '/usr/share/icons/hicolor/96x96/apps',
+    '/usr/share/icons/hicolor/64x64/apps',
+    '/usr/share/icons/hicolor/48x48/apps',
+    '/usr/share/icons/hicolor/scalable/apps',
+    '/usr/share/pixmaps',
+    path.join(os.homedir(), '.local/share/icons/hicolor/512x512/apps'),
+    path.join(os.homedir(), '.local/share/icons/hicolor/256x256/apps'),
+    path.join(os.homedir(), '.local/share/icons/hicolor/128x128/apps'),
+    path.join(os.homedir(), '.local/share/icons'),
+    '/usr/share/icons',
+    '/var/lib/flatpak/exports/share/icons/hicolor/512x512/apps',
+    '/var/lib/flatpak/exports/share/icons/hicolor/256x256/apps',
+    '/var/lib/flatpak/exports/share/icons/hicolor/128x128/apps',
+    path.join(os.homedir(), '.local/share/flatpak/exports/share/icons/hicolor/512x512/apps'),
+    path.join(os.homedir(), '.local/share/flatpak/exports/share/icons/hicolor/256x256/apps'),
+  ];
+
+  // Extensions to try
+  const extensions = ['', '.png', '.svg', '.xpm', '.ico'];
+
+  for (const dir of iconDirs) {
+    for (const ext of extensions) {
+      const iconPath = path.join(dir, iconName + ext);
+      try {
+        if (await fs.pathExists(iconPath)) {
+          console.log(`✅ Found Linux icon: ${iconPath}`);
+          return iconPath;
+        }
+      } catch (e) {
+        // Continue searching
+      }
+    }
+  }
+
+  console.log(`⚠️ Could not find Linux icon: ${iconName}`);
+  return null;
+}
+
 ipcMain.handle('extract-app-icon', async (event, appPath, shortcutName) => {
   try {
     let targetPath = appPath;
-    if (path.extname(appPath).toLowerCase() === '.lnk') {
+    let iconBuffer = null;
+
+    // Windows: Handle .lnk shortcuts
+    if (process.platform === 'win32' && path.extname(appPath).toLowerCase() === '.lnk') {
       try {
         const shortcutDetails = shell.readShortcutLink(appPath);
         targetPath = shortcutDetails.target;
@@ -1437,35 +1632,84 @@ ipcMain.handle('extract-app-icon', async (event, appPath, shortcutName) => {
       }
     }
 
-    try {
-      // Get JUMBO size icon from Windows
-      const icon = await app.getFileIcon(targetPath, { size: 'large' });
-      let iconBuffer = icon.toPNG();
+    // Linux: Handle .desktop files
+    if (process.platform === 'linux' && path.extname(appPath).toLowerCase() === '.desktop') {
+      try {
+        const desktopEntry = await parseDesktopFile(appPath);
+        if (desktopEntry) {
+          // Get the Exec path for the target
+          if (desktopEntry.Exec) {
+            // Extract the executable path (remove arguments)
+            targetPath = desktopEntry.Exec.split(' ')[0].replace(/%[a-zA-Z]/g, '').trim();
+          }
 
-      // Try to get even higher resolution if possible
-      const image = nativeImage.createFromPath(targetPath);
-      if (!image.isEmpty()) {
-        const size = image.getSize();
-        console.log(`📐 Original app icon size: ${size.width}x${size.height}`);
+          // Get the icon
+          if (desktopEntry.Icon) {
+            const iconPath = await findLinuxIcon(desktopEntry.Icon);
+            if (iconPath) {
+              try {
+                iconBuffer = await fs.readFile(iconPath);
+                console.log(`📥 Loaded Linux icon from: ${iconPath}`);
+              } catch (e) {
+                console.log('Could not read icon file:', e.message);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Could not parse .desktop file:', error.message);
+      }
+    }
 
-        // If we got a high-res icon, use it
-        if (size.width >= 128) {
-          iconBuffer = image.toPNG();
+    // If no icon buffer yet, try platform methods
+    if (!iconBuffer) {
+      try {
+        // Get icon from the file (works on Windows, may work on Linux/macOS)
+        const icon = await app.getFileIcon(targetPath, { size: 'large' });
+        iconBuffer = icon.toPNG();
+
+        // Windows: Try to get higher resolution if possible
+        if (process.platform === 'win32') {
+          const image = nativeImage.createFromPath(targetPath);
+          if (!image.isEmpty()) {
+            const size = image.getSize();
+            console.log(`📐 Original app icon size: ${size.width}x${size.height}`);
+
+            // If we got a high-res icon, use it
+            if (size.width >= 128) {
+              iconBuffer = image.toPNG();
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Could not extract app icon via getFileIcon:', error.message);
+      }
+    }
+
+    // Linux: If still no icon, try to find it by app name
+    if (!iconBuffer && process.platform === 'linux') {
+      const appName = path.basename(targetPath, path.extname(targetPath)).toLowerCase();
+      const iconPath = await findLinuxIcon(appName);
+      if (iconPath) {
+        try {
+          iconBuffer = await fs.readFile(iconPath);
+        } catch (e) {
+          console.log('Could not read icon file:', e.message);
         }
       }
+    }
 
+    if (iconBuffer) {
       // Resize to ULTRA high-res 512x512 with AI upscaling
       const resizedBuffer = await resizeImage(iconBuffer, 512);
 
       // Save locally and return file path
-      const iconPath = await saveIconLocally(resizedBuffer, shortcutName || path.basename(targetPath, path.extname(targetPath)));
+      const savedIconPath = await saveIconLocally(resizedBuffer, shortcutName || path.basename(targetPath, path.extname(targetPath)));
 
-      if (iconPath) {
-        console.log(`✅ ULTRA high-res app icon saved (512x512): ${iconPath}`);
-        return iconPath; // Return file path instead of base64
+      if (savedIconPath) {
+        console.log(`✅ ULTRA high-res app icon saved (512x512): ${savedIconPath}`);
+        return savedIconPath; // Return file path instead of base64
       }
-    } catch (error) {
-      console.log('Could not extract app icon:', error.message);
     }
 
     return null;
@@ -1888,184 +2132,320 @@ ipcMain.handle('get-open-windows', async () => {
   try {
     console.log('🪟 Getting open windows...');
 
-    if (process.platform !== 'win32') {
-      console.log('⚠️ Window listing only supported on Windows');
-      return [];
-    }
+    // Linux: Use wmctrl to get window list
+    if (process.platform === 'linux') {
+      return new Promise((resolve) => {
+        const child = spawn('wmctrl', ['-l', '-p'], {
+          stdio: 'pipe'
+        });
 
-    // Use PowerShell to get visible windows with executable paths
-    const powershellScript = `
-      Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | ForEach-Object {
-          $processId = $_.Id
-          $processName = $_.ProcessName
-          $windowTitle = $_.MainWindowTitle
-          $exePath = ""
+        let output = '';
+        let errorOutput = '';
+
+        child.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        child.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        child.on('close', async (code) => {
+          if (code !== 0) {
+            console.log('⚠️ wmctrl not available or failed. Install with: sudo apt install wmctrl');
+            resolve([]);
+            return;
+          }
 
           try {
-              $exePath = $_.Path
-          } catch {
-              $exePath = ""
-          }
+            const lines = output.trim().split('\n');
+            const windows = [];
 
-          # Output as JSON
-          @{
-              processId = $processId
-              processName = $processName
-              windowTitle = $windowTitle
-              exePath = $exePath
-          } | ConvertTo-Json -Compress
-      }
-    `;
+            for (const line of lines) {
+              if (line.trim()) {
+                // wmctrl -l -p format: window_id desktop_id pid hostname title
+                const parts = line.split(/\s+/);
+                if (parts.length >= 5) {
+                  const windowId = parts[0];
+                  const processId = parseInt(parts[2]);
+                  const windowTitle = parts.slice(4).join(' ');
 
-    return new Promise((resolve, reject) => {
-      const child = spawn('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        powershellScript
-      ], {
-        stdio: 'pipe',
-        windowsHide: true
-      });
+                  // Get process name and exe path from /proc
+                  let processName = '';
+                  let exePath = '';
+                  try {
+                    exePath = await fs.readlink(`/proc/${processId}/exe`);
+                    processName = path.basename(exePath);
+                  } catch (e) {
+                    // Process may have ended or we don't have permission
+                    processName = 'unknown';
+                  }
 
-      let output = '';
-      let errorOutput = '';
-
-      child.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      child.on('close', (code) => {
-        if (code !== 0) {
-          console.error('PowerShell error:', errorOutput);
-          resolve([]);
-          return;
-        }
-
-        try {
-          // Parse the JSON lines
-          const lines = output.trim().split('\n');
-          const windows = [];
-
-          for (const line of lines) {
-            if (line.trim()) {
-              try {
-                const windowInfo = JSON.parse(line);
-                // Filter out our own window
-                if (windowInfo.windowTitle &&
-                    !windowInfo.windowTitle.includes('Shortcut Launcher') &&
-                    windowInfo.processName !== 'electron') {
-                  windows.push({
-                    ...windowInfo,
-                    exePath: windowInfo.exePath || ''
-                  });
+                  // Filter out our own window
+                  if (windowTitle &&
+                      !windowTitle.includes('Shortcut Launcher') &&
+                      processName !== 'electron') {
+                    windows.push({
+                      windowId: windowId,
+                      processId: processId,
+                      processName: processName,
+                      windowTitle: windowTitle,
+                      exePath: exePath
+                    });
+                  }
                 }
-              } catch (parseError) {
-                console.log('Failed to parse line:', line);
               }
             }
+
+            console.log(`✅ Found ${windows.length} open windows (Linux)`);
+            resolve(windows);
+          } catch (error) {
+            console.error('Error parsing wmctrl output:', error);
+            resolve([]);
+          }
+        });
+
+        child.on('error', (error) => {
+          console.log('⚠️ wmctrl not found. Install with: sudo apt install wmctrl');
+          resolve([]);
+        });
+      });
+    }
+
+    // Windows: Use PowerShell to get visible windows with executable paths
+    if (process.platform === 'win32') {
+      const powershellScript = `
+        Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | ForEach-Object {
+            $processId = $_.Id
+            $processName = $_.ProcessName
+            $windowTitle = $_.MainWindowTitle
+            $exePath = ""
+
+            try {
+                $exePath = $_.Path
+            } catch {
+                $exePath = ""
+            }
+
+            # Output as JSON
+            @{
+                processId = $processId
+                processName = $processName
+                windowTitle = $windowTitle
+                exePath = $exePath
+            } | ConvertTo-Json -Compress
+        }
+      `;
+
+      return new Promise((resolve, reject) => {
+        const child = spawn('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          powershellScript
+        ], {
+          stdio: 'pipe',
+          windowsHide: true
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        child.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        child.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        child.on('close', (code) => {
+          if (code !== 0) {
+            console.error('PowerShell error:', errorOutput);
+            resolve([]);
+            return;
           }
 
-          console.log(`✅ Found ${windows.length} open windows`);
-          resolve(windows);
-        } catch (error) {
-          console.error('Error parsing window list:', error);
-          resolve([]);
-        }
-      });
+          try {
+            // Parse the JSON lines
+            const lines = output.trim().split('\n');
+            const windows = [];
 
-      child.on('error', (error) => {
-        console.error('Error running PowerShell:', error);
-        resolve([]);
+            for (const line of lines) {
+              if (line.trim()) {
+                try {
+                  const windowInfo = JSON.parse(line);
+                  // Filter out our own window
+                  if (windowInfo.windowTitle &&
+                      !windowInfo.windowTitle.includes('Shortcut Launcher') &&
+                      windowInfo.processName !== 'electron') {
+                    windows.push({
+                      ...windowInfo,
+                      exePath: windowInfo.exePath || ''
+                    });
+                  }
+                } catch (parseError) {
+                  console.log('Failed to parse line:', line);
+                }
+              }
+            }
+
+            console.log(`✅ Found ${windows.length} open windows`);
+            resolve(windows);
+          } catch (error) {
+            console.error('Error parsing window list:', error);
+            resolve([]);
+          }
+        });
+
+        child.on('error', (error) => {
+          console.error('Error running PowerShell:', error);
+          resolve([]);
+        });
       });
-    });
+    }
+
+    // Unsupported platform
+    console.log('⚠️ Window listing not supported on this platform');
+    return [];
   } catch (error) {
     console.error('❌ Error getting open windows:', error);
     return [];
   }
 });
 
-// NEW: Focus/switch to a window by process ID
-ipcMain.handle('focus-window', async (event, processId) => {
+// NEW: Focus/switch to a window by process ID (Windows) or window ID (Linux)
+ipcMain.handle('focus-window', async (event, processIdOrWindowId, windowId = null) => {
   try {
-    console.log(`🎯 Focusing window with process ID: ${processId}`);
+    console.log(`🎯 Focusing window: ${processIdOrWindowId}`);
 
-    if (process.platform !== 'win32') {
-      return { success: false, message: 'Only supported on Windows' };
+    // Linux: Use wmctrl to activate window by window ID
+    if (process.platform === 'linux') {
+      // On Linux, we can receive either windowId directly or as second parameter
+      const linuxWindowId = windowId || processIdOrWindowId;
+
+      return new Promise((resolve) => {
+        const child = spawn('wmctrl', ['-i', '-a', linuxWindowId], {
+          stdio: 'pipe'
+        });
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve({ success: true, message: 'Window focused' });
+          } else {
+            // Try with xdotool as fallback
+            const xdotoolChild = spawn('xdotool', ['windowactivate', linuxWindowId], {
+              stdio: 'pipe'
+            });
+
+            xdotoolChild.on('close', (xdoCode) => {
+              if (xdoCode === 0) {
+                resolve({ success: true, message: 'Window focused' });
+              } else {
+                resolve({ success: false, message: 'Could not focus window. Install wmctrl or xdotool.' });
+              }
+            });
+
+            xdotoolChild.on('error', () => {
+              resolve({ success: false, message: 'wmctrl/xdotool not available. Install with: sudo apt install wmctrl xdotool' });
+            });
+          }
+        });
+
+        child.on('error', () => {
+          // Try xdotool if wmctrl not found
+          const xdotoolChild = spawn('xdotool', ['windowactivate', linuxWindowId], {
+            stdio: 'pipe'
+          });
+
+          xdotoolChild.on('close', (xdoCode) => {
+            if (xdoCode === 0) {
+              resolve({ success: true, message: 'Window focused' });
+            } else {
+              resolve({ success: false, message: 'Could not focus window' });
+            }
+          });
+
+          xdotoolChild.on('error', () => {
+            resolve({ success: false, message: 'wmctrl/xdotool not available. Install with: sudo apt install wmctrl xdotool' });
+          });
+        });
+      });
     }
 
-    // Use PowerShell to bring window to foreground
-    const powershellScript = `
-      Add-Type @"
-      using System;
-      using System.Runtime.InteropServices;
-      public class Win32 {
-          [DllImport("user32.dll")]
-          public static extern bool SetForegroundWindow(IntPtr hWnd);
+    // Windows: Use PowerShell to bring window to foreground
+    if (process.platform === 'win32') {
+      const processId = processIdOrWindowId;
+      const powershellScript = `
+        Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class Win32 {
+            [DllImport("user32.dll")]
+            public static extern bool SetForegroundWindow(IntPtr hWnd);
 
-          [DllImport("user32.dll")]
-          public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+            [DllImport("user32.dll")]
+            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
-          [DllImport("user32.dll")]
-          public static extern bool IsIconic(IntPtr hWnd);
-      }
+            [DllImport("user32.dll")]
+            public static extern bool IsIconic(IntPtr hWnd);
+        }
 "@
 
-      $process = Get-Process -Id ${processId} -ErrorAction SilentlyContinue
-      if ($process) {
-          $hwnd = $process.MainWindowHandle
-          if ($hwnd -ne 0) {
-              # If minimized, restore it
-              if ([Win32]::IsIconic($hwnd)) {
-                  [Win32]::ShowWindow($hwnd, 9) # SW_RESTORE = 9
-              }
-              # Bring to foreground
-              [Win32]::SetForegroundWindow($hwnd)
-              Write-Output "success"
-          } else {
-              Write-Output "no_window"
-          }
-      } else {
-          Write-Output "not_found"
-      }
-    `;
-
-    return new Promise((resolve, reject) => {
-      const child = spawn('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        powershellScript
-      ], {
-        stdio: 'pipe',
-        windowsHide: true
-      });
-
-      let output = '';
-
-      child.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      child.on('close', (code) => {
-        const result = output.trim();
-        if (result === 'success') {
-          resolve({ success: true, message: 'Window focused' });
-        } else if (result === 'no_window') {
-          resolve({ success: false, message: 'Process has no window' });
+        $process = Get-Process -Id ${processId} -ErrorAction SilentlyContinue
+        if ($process) {
+            $hwnd = $process.MainWindowHandle
+            if ($hwnd -ne 0) {
+                # If minimized, restore it
+                if ([Win32]::IsIconic($hwnd)) {
+                    [Win32]::ShowWindow($hwnd, 9) # SW_RESTORE = 9
+                }
+                # Bring to foreground
+                [Win32]::SetForegroundWindow($hwnd)
+                Write-Output "success"
+            } else {
+                Write-Output "no_window"
+            }
         } else {
-          resolve({ success: false, message: 'Process not found' });
+            Write-Output "not_found"
         }
-      });
+      `;
 
-      child.on('error', (error) => {
-        reject(error);
+      return new Promise((resolve, reject) => {
+        const child = spawn('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          powershellScript
+        ], {
+          stdio: 'pipe',
+          windowsHide: true
+        });
+
+        let output = '';
+
+        child.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        child.on('close', (code) => {
+          const result = output.trim();
+          if (result === 'success') {
+            resolve({ success: true, message: 'Window focused' });
+          } else if (result === 'no_window') {
+            resolve({ success: false, message: 'Process has no window' });
+          } else {
+            resolve({ success: false, message: 'Process not found' });
+          }
+        });
+
+        child.on('error', (error) => {
+          reject(error);
+        });
       });
-    });
+    }
+
+    return { success: false, message: 'Platform not supported' };
   } catch (error) {
     console.error('❌ Error focusing window:', error);
     return { success: false, message: error.message };

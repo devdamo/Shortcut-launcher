@@ -2228,6 +2228,7 @@ class ShortcutLauncher {
         const element = document.createElement('div');
         element.className = 'taskbar-window';
         element.dataset.processId = windowInfo.processId;
+        element.dataset.windowId = windowInfo.windowId || ''; // For Linux support
 
         // Create icon element - will be updated async with real icon
         const fallbackIcon = this.getFallbackWindowIcon(windowInfo.processName);
@@ -2244,7 +2245,7 @@ class ShortcutLauncher {
 
         // Add click handler to switch to window
         element.addEventListener('click', async () => {
-            await this.switchToWindow(windowInfo.processId);
+            await this.switchToWindow(windowInfo.processId, windowInfo.windowId);
         });
 
         return element;
@@ -2297,16 +2298,16 @@ class ShortcutLauncher {
         return '🪟';
     }
 
-    async switchToWindow(processId) {
+    async switchToWindow(processId, windowId) {
         try {
-            console.log(`🎯 Switching to window with process ID: ${processId}`);
+            console.log(`🎯 Switching to window with process ID: ${processId}, window ID: ${windowId}`);
 
             if (!window.electronAPI || !window.electronAPI.focusWindow) {
                 this.showMessage('Cannot switch windows: API not available');
                 return;
             }
 
-            const result = await window.electronAPI.focusWindow(processId);
+            const result = await window.electronAPI.focusWindow(processId, windowId);
 
             if (!result.success) {
                 console.warn(`⚠️ Failed to switch to window: ${result.message}`);

@@ -55,8 +55,8 @@ try {
     // NEW: Taskbar - get open windows
     getOpenWindows: () => ipcRenderer.invoke('get-open-windows'),
 
-    // NEW: Taskbar - focus/switch to window
-    focusWindow: (processId) => ipcRenderer.invoke('focus-window', processId),
+    // NEW: Taskbar - focus/switch to window (supports processId for Windows, windowId for Linux)
+    focusWindow: (processId, windowId) => ipcRenderer.invoke('focus-window', processId, windowId),
 
     // NEW: Get icon from process executable
     getProcessIcon: (exePath) => ipcRenderer.invoke('get-process-icon', exePath),
