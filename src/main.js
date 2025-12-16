@@ -5,6 +5,7 @@ const os = require('os');
 const mysql = require('mysql2/promise');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
+const { io } = require('socket.io-client');
 
 // Pure Electron wallpaper mode (no native dependencies required!)
 console.log('🎮 Pure Electron wallpaper mode loaded - no compilation needed!');
@@ -20,9 +21,10 @@ let isWallpaperMode = false;
 let iconsDir = null; // Directory for storing icons locally
 let processIconCache = new Map(); // Cache for process icons
 
-// Server connection variables
+// Server connection variables (Socket.IO based)
 let serverUrl = null;
 let clientId = null;
+let socket = null;
 let heartbeatInterval = null;
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
@@ -620,142 +622,33 @@ async function downloadFile(url, outputPath, options = {}) {
 }
 
 // ============================================================
-// SERVER CONNECTION FUNCTIONS
+// SERVER CONNECTION FUNCTIONS (Socket.IO)
 // ============================================================
 
-// Make HTTP request to server
-async function serverRequest(endpoint, method = 'GET', body = null) {
-  if (!serverUrl) {
-    console.log('⚠️ Server URL not configured');
-    return null;
-  }
-
-  const url = `${serverUrl}${endpoint}`;
-  console.log(`🌐 Server request: ${method} ${url}`);
-
-  return new Promise((resolve, reject) => {
-    const https = require('https');
-    const http = require('http');
-    const urlObj = new URL(url);
-    const protocol = urlObj.protocol === 'https:' ? https : http;
-
-    const options = {
-      hostname: urlObj.hostname,
-      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-      path: urlObj.pathname + urlObj.search,
-      method: method,
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Shortcut-Launcher'
-      },
-      timeout: 10000
-    };
-
-    const req = protocol.request(options, (res) => {
-      let data = '';
-
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-
-      res.on('end', () => {
-        try {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            resolve(JSON.parse(data));
-          } else {
-            console.error(`❌ Server responded with ${res.statusCode}:`, data);
-            resolve(null);
-          }
-        } catch (e) {
-          console.error('❌ Failed to parse server response:', e.message);
-          resolve(null);
-        }
-      });
-    });
-
-    req.on('error', (error) => {
-      console.error('❌ Server request error:', error.message);
-      resolve(null);
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      console.error('❌ Server request timeout');
-      resolve(null);
-    });
-
-    if (body) {
-      req.write(JSON.stringify(body));
-    }
-
-    req.end();
-  });
-}
-
-// Register client with server
-async function registerWithServer() {
-  if (!serverUrl || !pcInfo) {
-    console.log('⚠️ Cannot register: server URL or PC info not available');
-    return false;
-  }
-
-  console.log('📡 Registering with server...');
-
-  const packageJson = require('../package.json');
-
-  const response = await serverRequest('/api/clients', 'POST', {
-    name: pcInfo.hostname,
-    hostname: pcInfo.hostname,
-    ipAddress: null, // Could add IP detection later
-    version: packageJson.version
-  });
-
-  if (response && response.id) {
-    clientId = response.id;
-    console.log(`✅ Registered with server. Client ID: ${clientId}`);
-    return true;
-  }
-
-  console.error('❌ Failed to register with server');
-  return false;
-}
-
-// Send heartbeat and get pending commands
-async function sendHeartbeat() {
-  if (!serverUrl || !clientId) {
-    return;
-  }
-
-  console.log('💓 Sending heartbeat...');
-
-  const packageJson = require('../package.json');
-
-  const response = await serverRequest(`/api/clients/${clientId}`, 'PUT', {
-    version: packageJson.version
-  });
-
-  if (response) {
-    console.log('✅ Heartbeat sent');
-
-    // Process any pending commands
-    if (response.commands && response.commands.length > 0) {
-      console.log(`📬 Received ${response.commands.length} commands`);
-      for (const command of response.commands) {
-        await executeCommand(command);
-      }
-    }
+// Get current shortcuts from database for heartbeat
+async function getCurrentShortcuts() {
+  try {
+    if (!dbConnection || !pcInfo) return [];
+    const tableName = `shortcuts_${pcInfo.hostname.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const [rows] = await dbConnection.execute(`SELECT id, name, path, type FROM \`${tableName}\``);
+    return rows;
+  } catch (error) {
+    console.error('❌ Error getting shortcuts for heartbeat:', error);
+    return [];
   }
 }
 
 // Execute a command from the server
 async function executeCommand(command) {
   console.log(`⚡ Executing command: ${command.type}`);
+  let success = true;
+  let error = null;
 
   try {
     switch (command.type) {
       case 'OPEN_SHORTCUT':
         if (command.payload && command.payload.path) {
-          const isUrl = command.payload.type === 'website';
+          const isUrl = command.payload.isUrl || command.payload.type === 'website';
           if (isUrl) {
             await require('electron').shell.openExternal(command.payload.path);
           } else {
@@ -773,13 +666,14 @@ async function executeCommand(command) {
         break;
 
       case 'REMOVE_SHORTCUT':
-        if (command.payload && command.payload.id && mainWindow) {
-          mainWindow.webContents.send('server-remove-shortcut', command.payload.id);
+        if (command.payload && command.payload.shortcutId && mainWindow) {
+          mainWindow.webContents.send('server-remove-shortcut', command.payload.shortcutId);
           console.log(`✅ Remove shortcut command sent to renderer`);
         }
         break;
 
       case 'UPDATE_SETTINGS':
+      case 'REFRESH_SHORTCUTS':
         if (mainWindow) {
           mainWindow.webContents.send('server-sync-settings');
           console.log(`✅ Settings sync command sent to renderer`);
@@ -836,9 +730,37 @@ async function executeCommand(command) {
       default:
         console.log(`⚠️ Unknown command type: ${command.type}`);
     }
-  } catch (error) {
-    console.error(`❌ Error executing command ${command.type}:`, error);
+  } catch (err) {
+    console.error(`❌ Error executing command ${command.type}:`, err);
+    success = false;
+    error = err.message;
   }
+
+  // Send response back to server
+  if (socket && socket.connected) {
+    socket.emit('command:response', {
+      commandType: command.type,
+      success,
+      error
+    });
+  }
+}
+
+// Send heartbeat with shortcuts info
+async function sendHeartbeat() {
+  if (!socket || !socket.connected) {
+    return;
+  }
+
+  const packageJson = require('../package.json');
+  const shortcuts = await getCurrentShortcuts();
+
+  socket.emit('heartbeat', {
+    version: packageJson.version,
+    shortcuts
+  });
+
+  console.log('💓 Heartbeat sent');
 }
 
 // Start heartbeat interval
@@ -864,22 +786,132 @@ function stopHeartbeat() {
   }
 }
 
-// Connect to server (called after getting server URL from settings)
+// Disconnect from server
+function disconnectFromServer() {
+  stopHeartbeat();
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+  clientId = null;
+  console.log('🔌 Disconnected from server');
+}
+
+// Connect to server using Socket.IO
 async function connectToServer() {
   if (!serverUrl) {
     console.log('⚠️ No server URL configured');
     return false;
   }
 
-  console.log(`🌐 Connecting to server: ${serverUrl}`);
-
-  const registered = await registerWithServer();
-  if (registered) {
-    startHeartbeat();
-    return true;
+  // Disconnect existing connection if any
+  if (socket) {
+    disconnectFromServer();
   }
 
-  return false;
+  console.log(`🌐 Connecting to server: ${serverUrl}`);
+
+  return new Promise((resolve) => {
+    try {
+      socket = io(serverUrl, {
+        path: '/ws',
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 10000
+      });
+
+      socket.on('connect', () => {
+        console.log('✅ Socket.IO connected');
+
+        // Register with server
+        const packageJson = require('../package.json');
+        socket.emit('register', {
+          hostname: pcInfo ? pcInfo.hostname : os.hostname(),
+          platform: process.platform,
+          arch: process.arch,
+          version: packageJson.version
+        });
+      });
+
+      socket.on('registered', (data) => {
+        clientId = data.clientId;
+        console.log(`✅ Registered with server. Client ID: ${clientId}`);
+        startHeartbeat();
+        resolve(true);
+      });
+
+      socket.on('command', (command) => {
+        console.log(`📬 Received command: ${command.type}`);
+        executeCommand(command);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log(`🔌 Disconnected from server: ${reason}`);
+        stopHeartbeat();
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket.IO connection error:', error.message);
+        resolve(false);
+      });
+
+      // Timeout for initial connection
+      setTimeout(() => {
+        if (!socket.connected) {
+          console.error('❌ Connection timeout');
+          socket.disconnect();
+          resolve(false);
+        }
+      }, 15000);
+
+    } catch (error) {
+      console.error('❌ Error creating socket connection:', error);
+      resolve(false);
+    }
+  });
+}
+
+// Test server connection
+async function testServerConnection(url) {
+  return new Promise((resolve) => {
+    try {
+      const testSocket = io(url, {
+        path: '/ws',
+        reconnection: false,
+        timeout: 5000
+      });
+
+      const timeout = setTimeout(() => {
+        testSocket.disconnect();
+        resolve(false);
+      }, 5000);
+
+      testSocket.on('connect', () => {
+        clearTimeout(timeout);
+        testSocket.disconnect();
+        resolve(true);
+      });
+
+      testSocket.on('connect_error', () => {
+        clearTimeout(timeout);
+        testSocket.disconnect();
+        resolve(false);
+      });
+    } catch (error) {
+      resolve(false);
+    }
+  });
+}
+
+// Get server connection status
+function getServerStatus() {
+  return {
+    connected: socket ? socket.connected : false,
+    clientId: clientId,
+    serverUrl: serverUrl
+  };
 }
 
 // ============================================================
@@ -2011,48 +2043,25 @@ ipcMain.handle('server-connect', async (event, url) => {
 
 // Disconnect from server
 ipcMain.handle('server-disconnect', async () => {
-  stopHeartbeat();
+  disconnectFromServer();
   serverUrl = null;
-  clientId = null;
   return { success: true };
 });
 
 // Get server connection status
 ipcMain.handle('server-status', async () => {
-  return {
-    connected: !!clientId,
-    serverUrl: serverUrl,
-    clientId: clientId
-  };
+  return getServerStatus();
 });
 
-// Test server connection
+// Test server connection using Socket.IO
 ipcMain.handle('server-test', async (event, url) => {
   try {
     const testUrl = url.replace(/\/$/, '');
-    const https = require('https');
-    const http = require('http');
-    const urlObj = new URL(`${testUrl}/api/clients`);
-    const protocol = urlObj.protocol === 'https:' ? https : http;
-
-    return new Promise((resolve) => {
-      const req = protocol.get(urlObj, { timeout: 5000 }, (res) => {
-        resolve({
-          success: res.statusCode === 200,
-          status: res.statusCode,
-          message: res.statusCode === 200 ? 'Server is reachable' : `Server returned ${res.statusCode}`
-        });
-      });
-
-      req.on('error', (error) => {
-        resolve({ success: false, message: error.message });
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({ success: false, message: 'Connection timeout' });
-      });
-    });
+    const isReachable = await testServerConnection(testUrl);
+    return {
+      success: isReachable,
+      message: isReachable ? 'Server is reachable' : 'Cannot connect to server'
+    };
   } catch (error) {
     return { success: false, message: error.message };
   }

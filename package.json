@@ -42,7 +42,8 @@
     "electron-store": "^8.1.0",
     "fs-extra": "^11.2.0",
     "mysql2": "^3.6.5",
-    "peerjs": "^1.5.2"
+    "peerjs": "^1.5.2",
+    "socket.io-client": "^4.8.1"
   },
   "optionalDependencies": {
     "sharp": "^0.33.0"
@@ -73,15 +74,21 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "msi",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "publisherName": "Shortcut Launcher Team",
@@ -103,11 +110,17 @@
       "shortcutName": "Shortcut Launcher"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities"
     }
   },
