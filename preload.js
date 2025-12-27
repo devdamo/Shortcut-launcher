@@ -54,9 +54,6 @@ try {
 
     // Load icon from file path
     loadIcon: (iconPath) => ipcRenderer.invoke('load-icon', iconPath),
-    
-    // NEW: RustDesk installation
-    installRustDesk: () => ipcRenderer.invoke('install-rustdesk'),
 
     // NEW: Remotely installation
     installRemotely: () => ipcRenderer.invoke('install-remotely'),
@@ -80,6 +77,12 @@ try {
     // Auto-launch on boot
     getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
     setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
+
+    // App version
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+    // Desktop shortcut
+    createDesktopShortcut: () => ipcRenderer.invoke('create-desktop-shortcut'),
 
     // Server connection
     serverConnect: (url) => ipcRenderer.invoke('server-connect', url),

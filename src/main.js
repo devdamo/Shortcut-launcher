@@ -481,6 +481,61 @@ ipcMain.handle('set-auto-launch', async (event, enabled) => {
   return setAutoLaunch(enabled);
 });
 
+// Get app version from package.json
+ipcMain.handle('get-app-version', async () => {
+  return app.getVersion();
+});
+
+// Create desktop shortcut for the app
+ipcMain.handle('create-desktop-shortcut', async () => {
+  try {
+    const desktopPath = path.join(os.homedir(), 'Desktop');
+    const appPath = process.execPath;
+    const appName = 'Shortcut Launcher';
+
+    if (process.platform === 'win32') {
+      // Windows: Create .lnk shortcut using PowerShell
+      const shortcutPath = path.join(desktopPath, `${appName}.lnk`);
+      const psScript = `
+        $WshShell = New-Object -ComObject WScript.Shell
+        $Shortcut = $WshShell.CreateShortcut("${shortcutPath.replace(/\\/g, '\\\\')}")
+        $Shortcut.TargetPath = "${appPath.replace(/\\/g, '\\\\')}"
+        $Shortcut.WorkingDirectory = "${path.dirname(appPath).replace(/\\/g, '\\\\')}"
+        $Shortcut.Description = "Shortcut Launcher"
+        $Shortcut.Save()
+      `;
+
+      const { execSync } = require('child_process');
+      execSync(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+        windowsHide: true
+      });
+
+      console.log(`✅ Desktop shortcut created: ${shortcutPath}`);
+      return { success: true, path: shortcutPath };
+    } else if (process.platform === 'linux') {
+      // Linux: Create .desktop file
+      const shortcutPath = path.join(desktopPath, `${appName.replace(/ /g, '-')}.desktop`);
+      const desktopEntry = `[Desktop Entry]
+Type=Application
+Name=${appName}
+Exec="${appPath}"
+Terminal=false
+Categories=Utility;
+`;
+      await fs.writeFile(shortcutPath, desktopEntry);
+      await fs.chmod(shortcutPath, '755');
+
+      console.log(`✅ Desktop shortcut created: ${shortcutPath}`);
+      return { success: true, path: shortcutPath };
+    } else {
+      return { success: false, error: 'Unsupported platform' };
+    }
+  } catch (error) {
+    console.error('❌ Error creating desktop shortcut:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // App event handlers
 app.whenReady().then(async () => {
   // Initialize icons directory first

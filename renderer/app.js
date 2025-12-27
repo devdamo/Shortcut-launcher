@@ -1056,8 +1056,13 @@ class ShortcutLauncher {
         const statusEl = document.getElementById('update-status');
         const checkBtn = document.getElementById('check-updates-btn');
 
-        // Get current version
-        this.currentVersion = '1.0.0';
+        // Get current version from main process (reads from package.json)
+        try {
+            this.currentVersion = await window.electronAPI.getAppVersion();
+        } catch (error) {
+            console.error('Failed to get app version:', error);
+            this.currentVersion = 'unknown';
+        }
         currentVersionEl.textContent = `v${this.currentVersion}`;
         latestVersionEl.textContent = '--';
         statusEl.textContent = '--';
@@ -1067,6 +1072,51 @@ class ShortcutLauncher {
             checkBtn.setAttribute('data-handler-added', 'true');
             checkBtn.addEventListener('click', async () => {
                 await this.checkForUpdates();
+            });
+        }
+
+        // Setup desktop shortcut handler
+        this.setupDesktopShortcutHandler();
+    }
+
+    setupDesktopShortcutHandler() {
+        const createShortcutBtn = document.getElementById('create-desktop-shortcut-btn');
+
+        if (createShortcutBtn && !createShortcutBtn.hasAttribute('data-handler-added')) {
+            createShortcutBtn.setAttribute('data-handler-added', 'true');
+            createShortcutBtn.addEventListener('click', async () => {
+                createShortcutBtn.textContent = 'Creating...';
+                createShortcutBtn.disabled = true;
+
+                try {
+                    const result = await window.electronAPI.createDesktopShortcut();
+                    if (result.success) {
+                        createShortcutBtn.textContent = 'Shortcut Created!';
+                        createShortcutBtn.style.backgroundColor = '#4CAF50';
+                        setTimeout(() => {
+                            createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                            createShortcutBtn.style.backgroundColor = '';
+                            createShortcutBtn.disabled = false;
+                        }, 2000);
+                    } else {
+                        createShortcutBtn.textContent = 'Failed';
+                        createShortcutBtn.style.backgroundColor = '#f44336';
+                        setTimeout(() => {
+                            createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                            createShortcutBtn.style.backgroundColor = '';
+                            createShortcutBtn.disabled = false;
+                        }, 2000);
+                    }
+                } catch (error) {
+                    console.error('Error creating desktop shortcut:', error);
+                    createShortcutBtn.textContent = 'Error';
+                    createShortcutBtn.style.backgroundColor = '#f44336';
+                    setTimeout(() => {
+                        createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                        createShortcutBtn.style.backgroundColor = '';
+                        createShortcutBtn.disabled = false;
+                    }, 2000);
+                }
             });
         }
     }
