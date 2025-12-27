@@ -1208,18 +1208,51 @@ class ShortcutLauncher {
         const progressText = document.getElementById('progress-text');
         const statusEl = document.getElementById('update-status');
 
-        // Find the appropriate asset (Windows exe or setup)
+        // Find the appropriate asset for Windows
         const assets = this.latestRelease.assets || [];
-        let downloadAsset = assets.find(a =>
-            a.name.endsWith('.exe') ||
-            a.name.endsWith('.msi') ||
-            a.name.includes('Setup') ||
-            a.name.includes('win')
-        );
+        console.log('Available assets:', assets.map(a => a.name));
 
-        // If no specific asset, use the zipball
-        const downloadUrl = downloadAsset ? downloadAsset.browser_download_url : this.latestRelease.zipball_url;
-        const fileName = downloadAsset ? downloadAsset.name : `update-${this.latestRelease.tag_name}.zip`;
+        // Priority order for Windows installers
+        let downloadAsset = null;
+
+        // 1. Look for Setup exe first (electron-builder format)
+        downloadAsset = assets.find(a => /setup.*\.exe$/i.test(a.name) || /.*setup\.exe$/i.test(a.name));
+
+        // 2. Look for any .exe installer
+        if (!downloadAsset) {
+            downloadAsset = assets.find(a => a.name.toLowerCase().endsWith('.exe'));
+        }
+
+        // 3. Look for .msi installer
+        if (!downloadAsset) {
+            downloadAsset = assets.find(a => a.name.toLowerCase().endsWith('.msi'));
+        }
+
+        // 4. Look for win64/win-x64 zip
+        if (!downloadAsset) {
+            downloadAsset = assets.find(a =>
+                (a.name.toLowerCase().includes('win') || a.name.toLowerCase().includes('windows')) &&
+                a.name.toLowerCase().endsWith('.zip')
+            );
+        }
+
+        if (!downloadAsset) {
+            alert('No Windows installer found in the latest release.\n\nAvailable files:\n' +
+                  assets.map(a => '• ' + a.name).join('\n'));
+            return;
+        }
+
+        const downloadUrl = downloadAsset.browser_download_url;
+        const fileName = downloadAsset.name;
+        const fileSize = downloadAsset.size;
+
+        console.log('Selected asset:', fileName, 'URL:', downloadUrl, 'Size:', fileSize);
+
+        // Confirm before downloading
+        const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
+        if (!confirm(`Download update?\n\nFile: ${fileName}\nSize: ${sizeMB} MB\n\nThe app will restart after installation.`)) {
+            return;
+        }
 
         installBtn.style.display = 'none';
         progressDiv.style.display = 'block';
@@ -1234,12 +1267,31 @@ class ShortcutLauncher {
 
                 if (result.success) {
                     progressFill.style.width = '100%';
-                    progressText.textContent = 'Download complete! Installing...';
-                    statusEl.textContent = 'Installing...';
+                    progressText.textContent = 'Download complete!';
+                    statusEl.textContent = 'Ready to install';
 
-                    // Install the update
-                    if (window.electronAPI.installUpdate) {
-                        await window.electronAPI.installUpdate(result.filePath);
+                    // Ask before installing
+                    if (confirm('Download complete!\n\nInstall now? The app will close and restart.')) {
+                        progressText.textContent = 'Installing...';
+                        statusEl.textContent = 'Installing...';
+
+                        if (window.electronAPI.installUpdate) {
+                            const installResult = await window.electronAPI.installUpdate(result.filePath);
+                            if (!installResult.success) {
+                                throw new Error(installResult.error || 'Installation failed');
+                            }
+                        }
+                    } else {
+                        // Show the file location
+                        progressText.textContent = 'Saved to Downloads';
+                        statusEl.textContent = 'Downloaded';
+                        installBtn.textContent = 'Install Now';
+                        installBtn.style.display = 'inline-block';
+                        installBtn.onclick = async () => {
+                            if (window.electronAPI.installUpdate) {
+                                await window.electronAPI.installUpdate(result.filePath);
+                            }
+                        };
                     }
                 } else {
                     throw new Error(result.error || 'Download failed');
@@ -1247,7 +1299,9 @@ class ShortcutLauncher {
             } else {
                 // Fallback: open in browser
                 progressText.textContent = 'Opening download in browser...';
-                window.open(downloadUrl, '_blank');
+                if (window.electronAPI && window.electronAPI.openShortcut) {
+                    window.electronAPI.openShortcut(downloadUrl, true);
+                }
                 progressDiv.style.display = 'none';
                 installBtn.style.display = 'inline-block';
             }
@@ -1255,6 +1309,7 @@ class ShortcutLauncher {
             console.error('Update error:', error);
             progressDiv.style.display = 'none';
             installBtn.style.display = 'inline-block';
+            installBtn.textContent = 'Retry Download';
             statusEl.textContent = 'Update failed';
             statusEl.style.color = '#f44336';
             alert('Update failed: ' + error.message);

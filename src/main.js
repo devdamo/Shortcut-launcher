@@ -2609,7 +2609,7 @@ ipcMain.handle('get-process-icon', async (event, exePath) => {
   }
 });
 
-// Download update from GitHub
+// Download update from GitHub with proper redirect handling
 ipcMain.handle('download-update', async (event, downloadUrl, fileName) => {
   try {
     console.log('📥 Downloading update from:', downloadUrl);
@@ -2619,60 +2619,89 @@ ipcMain.handle('download-update', async (event, downloadUrl, fileName) => {
     const downloadsPath = app.getPath('downloads');
     const filePath = path.join(downloadsPath, fileName);
 
-    return new Promise((resolve, reject) => {
-      const protocol = downloadUrl.startsWith('https') ? https : http;
+    // Helper function to follow redirects (up to 5 levels)
+    const downloadWithRedirects = (url, maxRedirects = 5) => {
+      return new Promise((resolve, reject) => {
+        if (maxRedirects <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
 
-      const request = protocol.get(downloadUrl, {
-        headers: { 'User-Agent': 'Shortcut-Launcher-Updater' }
-      }, (response) => {
-        // Handle redirects
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          const redirectUrl = response.headers.location;
-          console.log('📥 Redirecting to:', redirectUrl);
+        const protocol = url.startsWith('https') ? https : http;
 
-          const redirectProtocol = redirectUrl.startsWith('https') ? https : http;
-          redirectProtocol.get(redirectUrl, {
-            headers: { 'User-Agent': 'Shortcut-Launcher-Updater' }
-          }, (redirectResponse) => {
-            const file = require('fs').createWriteStream(filePath);
-            redirectResponse.pipe(file);
+        const request = protocol.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/octet-stream'
+          }
+        }, (response) => {
+          // Handle redirects (301, 302, 303, 307, 308)
+          if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+            const redirectUrl = response.headers.location;
+            console.log(`📥 Redirect (${response.statusCode}) to:`, redirectUrl);
 
-            file.on('finish', () => {
-              file.close();
-              console.log('✅ Download complete:', filePath);
-              resolve({ success: true, filePath });
-            });
-          }).on('error', (err) => {
-            reject({ success: false, error: err.message });
+            // Handle relative URLs
+            const fullRedirectUrl = redirectUrl.startsWith('http')
+              ? redirectUrl
+              : new URL(redirectUrl, url).href;
+
+            downloadWithRedirects(fullRedirectUrl, maxRedirects - 1)
+              .then(resolve)
+              .catch(reject);
+            return;
+          }
+
+          if (response.statusCode !== 200) {
+            reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
+            return;
+          }
+
+          const totalSize = parseInt(response.headers['content-length'], 10) || 0;
+          let downloadedSize = 0;
+
+          console.log(`📥 Starting download: ${(totalSize / (1024 * 1024)).toFixed(1)} MB`);
+
+          const file = require('fs').createWriteStream(filePath);
+
+          response.on('data', (chunk) => {
+            downloadedSize += chunk.length;
+            if (totalSize > 0) {
+              const percent = Math.round((downloadedSize / totalSize) * 100);
+              // Log progress every 10%
+              if (percent % 10 === 0) {
+                console.log(`📥 Download progress: ${percent}%`);
+              }
+            }
           });
-          return;
-        }
 
-        if (response.statusCode !== 200) {
-          reject({ success: false, error: `HTTP ${response.statusCode}` });
-          return;
-        }
+          response.pipe(file);
 
-        const file = require('fs').createWriteStream(filePath);
-        response.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            console.log('✅ Download complete:', filePath);
+            resolve({ success: true, filePath });
+          });
 
-        file.on('finish', () => {
-          file.close();
-          console.log('✅ Download complete:', filePath);
-          resolve({ success: true, filePath });
+          file.on('error', (err) => {
+            file.close();
+            require('fs').unlink(filePath, () => {}); // Clean up partial file
+            reject(new Error(`File write error: ${err.message}`));
+          });
+        });
+
+        request.on('error', (err) => {
+          console.error('❌ Download error:', err);
+          reject(new Error(`Network error: ${err.message}`));
+        });
+
+        request.setTimeout(300000, () => { // 5 minute timeout
+          request.destroy();
+          reject(new Error('Download timeout (5 minutes)'));
         });
       });
+    };
 
-      request.on('error', (err) => {
-        console.error('❌ Download error:', err);
-        reject({ success: false, error: err.message });
-      });
-
-      request.setTimeout(60000, () => {
-        request.destroy();
-        reject({ success: false, error: 'Download timeout' });
-      });
-    });
+    return await downloadWithRedirects(downloadUrl);
   } catch (error) {
     console.error('❌ Download update error:', error);
     return { success: false, error: error.message };
