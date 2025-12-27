@@ -212,16 +212,6 @@ class ShortcutLauncher {
             console.log('✅ Remotely button event listener added');
         }
 
-        // RustDesk button
-        const rustdeskBtn = document.getElementById('rustdesk-btn');
-        if (rustdeskBtn) {
-            rustdeskBtn.addEventListener('click', () => {
-                console.log('RustDesk button clicked');
-                this.installRustDesk();
-            });
-            console.log('✅ RustDesk button event listener added');
-        }
-
         // TOP BAR Add shortcut button - ONLY ADD BUTTON NOW
         const addBtn = document.getElementById('add-shortcut-btn');
         if (addBtn) {
@@ -1091,10 +1081,10 @@ class ShortcutLauncher {
                 try {
                     const result = await window.electronAPI.createDesktopShortcut();
                     if (result.success) {
-                        createShortcutBtn.textContent = 'Shortcut Created!';
+                        createShortcutBtn.textContent = 'Created!';
                         createShortcutBtn.style.backgroundColor = '#4CAF50';
                         setTimeout(() => {
-                            createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                            createShortcutBtn.textContent = 'Create Shortcut';
                             createShortcutBtn.style.backgroundColor = '';
                             createShortcutBtn.disabled = false;
                         }, 2000);
@@ -1102,7 +1092,7 @@ class ShortcutLauncher {
                         createShortcutBtn.textContent = 'Failed';
                         createShortcutBtn.style.backgroundColor = '#f44336';
                         setTimeout(() => {
-                            createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                            createShortcutBtn.textContent = 'Create Shortcut';
                             createShortcutBtn.style.backgroundColor = '';
                             createShortcutBtn.disabled = false;
                         }, 2000);
@@ -1112,12 +1102,45 @@ class ShortcutLauncher {
                     createShortcutBtn.textContent = 'Error';
                     createShortcutBtn.style.backgroundColor = '#f44336';
                     setTimeout(() => {
-                        createShortcutBtn.textContent = 'Create Desktop Shortcut';
+                        createShortcutBtn.textContent = 'Create Shortcut';
                         createShortcutBtn.style.backgroundColor = '';
                         createShortcutBtn.disabled = false;
                     }, 2000);
                 }
             });
+        }
+
+        // Setup auto-launch toggle
+        this.setupAutoLaunchHandler();
+    }
+
+    async setupAutoLaunchHandler() {
+        const autoLaunchToggle = document.getElementById('auto-launch-toggle');
+
+        if (autoLaunchToggle) {
+            // Load current state
+            try {
+                const isEnabled = await window.electronAPI.getAutoLaunch();
+                autoLaunchToggle.checked = isEnabled;
+            } catch (error) {
+                console.error('Error getting auto-launch status:', error);
+            }
+
+            // Add change handler
+            if (!autoLaunchToggle.hasAttribute('data-handler-added')) {
+                autoLaunchToggle.setAttribute('data-handler-added', 'true');
+                autoLaunchToggle.addEventListener('change', async () => {
+                    try {
+                        const enabled = autoLaunchToggle.checked;
+                        await window.electronAPI.setAutoLaunch(enabled);
+                        console.log(`Auto-launch ${enabled ? 'enabled' : 'disabled'}`);
+                    } catch (error) {
+                        console.error('Error setting auto-launch:', error);
+                        // Revert toggle on error
+                        autoLaunchToggle.checked = !autoLaunchToggle.checked;
+                    }
+                });
+            }
         }
     }
 
@@ -2128,93 +2151,6 @@ class ShortcutLauncher {
         }
     }
 
-    // Install RustDesk method
-    async installRustDesk() {
-        console.log('Installing RustDesk...');
-        
-        if (!confirm('This will download and install RustDesk (Remote Desktop Software).\n\nYou will be prompted for Administrator privileges.\n\nDo you want to continue?')) {
-            return;
-        }
-        
-        try {
-            if (!window.electronAPI || !window.electronAPI.installRustDesk) {
-                this.showMessage('Cannot install RustDesk: System API not available');
-                return;
-            }
-            
-            // Show loading state
-            const rustdeskBtn = document.getElementById('rustdesk-btn');
-            const originalText = rustdeskBtn.textContent;
-            rustdeskBtn.textContent = '⬇️ Downloading...';
-            rustdeskBtn.disabled = true;
-            
-            console.log('Starting RustDesk installation...');
-            
-            try {
-                const result = await window.electronAPI.installRustDesk();
-                
-                if (result.success) {
-                    rustdeskBtn.textContent = '✅ Installed!';
-                    console.log('✅ RustDesk installed successfully');
-                    
-                    // Show success message
-                    alert('RustDesk has been installed successfully!\n\nYou can find it in your Start Menu or Desktop.');
-                    
-                    // Reset button after delay
-                    setTimeout(() => {
-                        rustdeskBtn.textContent = originalText;
-                        rustdeskBtn.disabled = false;
-                    }, 3000);
-                } else {
-                    throw new Error(result.error || 'Installation failed');
-                }
-            } catch (installError) {
-                // Handle specific error cases
-                if (installError.message.includes('declined') || installError.message.includes('cancelled')) {
-                    rustdeskBtn.textContent = '❌ Cancelled';
-                    alert('Installation cancelled: Administrator privileges are required to install RustDesk.');
-                } else if (installError.message.includes('1625')) {
-                    rustdeskBtn.textContent = '❌ Failed';
-                    this.showManualInstallPrompt();
-                } else {
-                    rustdeskBtn.textContent = '❌ Failed';
-                    this.showMessage('Error installing RustDesk: ' + installError.message);
-                }
-                
-                // Reset button after delay
-                setTimeout(() => {
-                    rustdeskBtn.textContent = originalText;
-                    rustdeskBtn.disabled = false;
-                }, 3000);
-            }
-            
-        } catch (error) {
-            console.error('❌ Error installing RustDesk:', error);
-            this.showMessage('Error installing RustDesk: ' + error.message);
-            
-            // Reset button
-            const rustdeskBtn = document.getElementById('rustdesk-btn');
-            rustdeskBtn.textContent = '📡 RustDesk';
-            rustdeskBtn.disabled = false;
-        }
-    }
-    
-    // NEW: Show manual install instructions
-    showManualInstallPrompt() {
-        const message = `Automatic installation failed. You can install RustDesk manually:\n\n` +
-                       `1. Download from: https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.msi\n` +
-                       `2. Right-click the downloaded file\n` +
-                       `3. Select "Run as administrator"\n` +
-                       `4. Follow the installation prompts\n\n` +
-                       `Would you like to open the download page in your browser?`;
-        
-        if (confirm(message)) {
-            if (window.electronAPI && window.electronAPI.openShortcut) {
-                window.electronAPI.openShortcut('https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.msi', true);
-            }
-        }
-    }
-    
     showMessage(message) {
         // Only show popup alerts for errors and important warnings
         // Success messages are now silent (logged to console only)

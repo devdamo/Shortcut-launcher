@@ -490,23 +490,29 @@ ipcMain.handle('get-app-version', async () => {
 ipcMain.handle('create-desktop-shortcut', async () => {
   try {
     const desktopPath = path.join(os.homedir(), 'Desktop');
-    const appPath = process.execPath;
+    const electronPath = process.execPath;
+    const appDir = app.getAppPath();
     const appName = 'Shortcut Launcher';
+    const isPackaged = app.isPackaged;
 
     if (process.platform === 'win32') {
       // Windows: Create .lnk shortcut using PowerShell
       const shortcutPath = path.join(desktopPath, `${appName}.lnk`);
-      const psScript = `
-        $WshShell = New-Object -ComObject WScript.Shell
-        $Shortcut = $WshShell.CreateShortcut("${shortcutPath.replace(/\\/g, '\\\\')}")
-        $Shortcut.TargetPath = "${appPath.replace(/\\/g, '\\\\')}"
-        $Shortcut.WorkingDirectory = "${path.dirname(appPath).replace(/\\/g, '\\\\')}"
-        $Shortcut.Description = "Shortcut Launcher"
-        $Shortcut.Save()
-      `;
+      const escapedShortcutPath = shortcutPath.replace(/\\/g, '\\\\');
+      const escapedElectronPath = electronPath.replace(/\\/g, '\\\\');
+      const escapedAppDir = appDir.replace(/\\/g, '\\\\');
+
+      let psScript;
+      if (isPackaged) {
+        // Packaged app: just run the exe directly
+        psScript = `$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('${escapedShortcutPath}'); $Shortcut.TargetPath = '${escapedElectronPath}'; $Shortcut.WorkingDirectory = '${path.dirname(electronPath).replace(/\\/g, '\\\\')}'; $Shortcut.Description = 'Shortcut Launcher'; $Shortcut.Save()`;
+      } else {
+        // Development: run electron with the app directory as argument
+        psScript = `$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('${escapedShortcutPath}'); $Shortcut.TargetPath = '${escapedElectronPath}'; $Shortcut.Arguments = '"${escapedAppDir}"'; $Shortcut.WorkingDirectory = '${escapedAppDir}'; $Shortcut.Description = 'Shortcut Launcher'; $Shortcut.Save()`;
+      }
 
       const { execSync } = require('child_process');
-      execSync(`powershell -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+      execSync(`powershell -Command "${psScript}"`, {
         windowsHide: true
       });
 
@@ -515,10 +521,11 @@ ipcMain.handle('create-desktop-shortcut', async () => {
     } else if (process.platform === 'linux') {
       // Linux: Create .desktop file
       const shortcutPath = path.join(desktopPath, `${appName.replace(/ /g, '-')}.desktop`);
+      const execCommand = isPackaged ? `"${electronPath}"` : `"${electronPath}" "${appDir}"`;
       const desktopEntry = `[Desktop Entry]
 Type=Application
 Name=${appName}
-Exec="${appPath}"
+Exec=${execCommand}
 Terminal=false
 Categories=Utility;
 `;
@@ -1487,199 +1494,6 @@ ipcMain.handle('browse-icon-image', async () => {
   } catch (error) {
     console.error('❌ Error processing icon image:', error);
     throw error;
-  }
-});
-
-// NEW: Install RustDesk handler
-ipcMain.handle('install-rustdesk', async () => {
-  console.log('🚀 Installing RustDesk...');
-
-  // Linux installation
-  if (process.platform === 'linux') {
-    try {
-      const arch = os.arch();
-      let rustdeskUrl;
-      let downloadPath;
-
-      if (arch === 'x64') {
-        rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.deb';
-        downloadPath = path.join(os.tmpdir(), 'rustdesk-installer.deb');
-      } else if (arch === 'arm64') {
-        rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-aarch64.deb';
-        downloadPath = path.join(os.tmpdir(), 'rustdesk-installer.deb');
-      } else {
-        return { success: false, error: `Unsupported architecture: ${arch}` };
-      }
-
-      console.log('📥 Downloading RustDesk from:', rustdeskUrl);
-      console.log('📁 Download path:', downloadPath);
-
-      // Download the file
-      await downloadFile(rustdeskUrl, downloadPath, {
-        timeout: 120000, // 2 minutes timeout
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
-        }
-      });
-
-      console.log('✅ Download completed, starting installation...');
-
-      // Install using pkexec for privilege escalation
-      return new Promise((resolve, reject) => {
-        const installer = spawn('pkexec', ['dpkg', '-i', downloadPath], {
-          stdio: 'pipe'
-        });
-
-        let errorOutput = '';
-        let stdOutput = '';
-
-        installer.stdout.on('data', (data) => {
-          stdOutput += data.toString();
-        });
-
-        installer.stderr.on('data', (data) => {
-          errorOutput += data.toString();
-        });
-
-        installer.on('close', (code) => {
-          // Clean up downloaded file
-          fs.unlink(downloadPath, (err) => {
-            if (err) console.log('Warning: Could not clean up installer file:', err.message);
-          });
-
-          console.log(`dpkg exit code: ${code}`);
-
-          if (code === 0) {
-            console.log('✅ RustDesk installation completed successfully');
-            resolve({
-              success: true,
-              message: 'RustDesk installed successfully!'
-            });
-          } else {
-            // Try to fix dependencies
-            console.log('⚠️ Attempting to fix dependencies...');
-            const fixDeps = spawn('pkexec', ['apt-get', 'install', '-f', '-y'], {
-              stdio: 'pipe'
-            });
-
-            fixDeps.on('close', (fixCode) => {
-              if (fixCode === 0) {
-                resolve({
-                  success: true,
-                  message: 'RustDesk installed successfully (dependencies fixed)!'
-                });
-              } else {
-                reject(new Error(`Installation failed. Please install manually: sudo dpkg -i ${downloadPath} && sudo apt-get install -f`));
-              }
-            });
-          }
-        });
-
-        installer.on('error', (error) => {
-          console.error('❌ Installation process error:', error);
-          fs.unlink(downloadPath, () => {});
-          reject(new Error(`Installation process failed: ${error.message}. Try: sudo dpkg -i <downloaded-file>`));
-        });
-      });
-
-    } catch (error) {
-      console.error('❌ RustDesk installation error (Linux):', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // Windows installation
-  if (process.platform !== 'win32') {
-    return { success: false, error: 'RustDesk installation only supported on Windows and Linux' };
-  }
-
-  try {
-    const rustdeskUrl = 'https://github.com/rustdesk/rustdesk/releases/download/1.4.1/rustdesk-1.4.1-x86_64.msi';
-    const tempDir = os.tmpdir();
-    const downloadPath = path.join(tempDir, 'rustdesk-installer.msi');
-
-    console.log('📥 Downloading RustDesk from:', rustdeskUrl);
-    console.log('📁 Download path:', downloadPath);
-
-    // Download the file
-    await downloadFile(rustdeskUrl, downloadPath, {
-      timeout: 60000, // 60 seconds timeout
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-
-    console.log('✅ Download completed, starting installation...');
-
-    // Execute the MSI installer with elevated privileges
-    return new Promise((resolve, reject) => {
-      // Use PowerShell to run the installer with elevated privileges
-      const powershellCommand = `Start-Process -FilePath "msiexec.exe" -ArgumentList "/i","${downloadPath}","/quiet","/norestart" -Verb RunAs -Wait`;
-
-      const installer = spawn('powershell.exe', ['-Command', powershellCommand], {
-        stdio: 'pipe',
-        windowsHide: true
-      });
-
-      let errorOutput = '';
-      let stdOutput = '';
-
-      installer.stdout.on('data', (data) => {
-        stdOutput += data.toString();
-      });
-
-      installer.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      installer.on('close', (code) => {
-        // Clean up downloaded file
-        fs.unlink(downloadPath, (err) => {
-          if (err) console.log('Warning: Could not clean up installer file:', err.message);
-        });
-
-        console.log(`PowerShell exit code: ${code}`);
-        console.log(`Stdout: ${stdOutput}`);
-        console.log(`Stderr: ${errorOutput}`);
-
-        if (code === 0) {
-          console.log('✅ RustDesk installation completed successfully');
-          resolve({
-            success: true,
-            message: 'RustDesk installed successfully! You may need to restart your computer.'
-          });
-        } else {
-          // Check for specific error conditions
-          if (errorOutput.includes('declined the elevation prompt') || errorOutput.includes('cancelled')) {
-            reject(new Error('Installation cancelled: Administrator privileges required but declined by user.'));
-          } else if (code === 1) {
-            // Exit code 1 might still be success in some cases for PowerShell
-            console.log('⚠️ PowerShell returned exit code 1, but this might be normal');
-            resolve({
-              success: true,
-              message: 'RustDesk installation completed. Please check if it was installed successfully.'
-            });
-          } else {
-            console.error(`❌ Installation failed with exit code: ${code}`);
-            reject(new Error(`Installation failed with exit code: ${code}. ${errorOutput || stdOutput}`));
-          }
-        }
-      });
-
-      installer.on('error', (error) => {
-        console.error('❌ Installation process error:', error);
-        // Clean up downloaded file
-        fs.unlink(downloadPath, () => {});
-        reject(new Error(`Installation process failed: ${error.message}`));
-      });
-    });
-    
-  } catch (error) {
-    console.error('❌ RustDesk installation error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
   }
 });
 
