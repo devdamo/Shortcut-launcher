@@ -79,12 +79,6 @@
           ]
         },
         {
-          "target": "msi",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "portable",
           "arch": [
             "x64"
@@ -94,14 +88,6 @@
       "icon": "build/icon.png",
       "publisherName": "Shortcut Launcher Team",
       "verifyUpdateCodeSignature": false
-    },
-    "msi": {
-      "oneClick": false,
-      "perMachine": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Shortcut Launcher",
-      "runAfterFinish": false
     },
     "nsis": {
       "oneClick": false,
